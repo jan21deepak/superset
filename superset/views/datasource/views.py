@@ -193,7 +193,9 @@ class Datasource(BaseSupersetView):
                 )
         except (NoResultFound, NoSuchTableError) as ex:
             raise DatasetNotFoundError() from ex
-        return self.json_response(external_metadata)
+        # Mirror ``external_metadata``: normalize a null result to empty columns
+        # so both endpoints behave consistently for the same condition.
+        return self.json_response(external_metadata or [])
 
     @expose("/samples", methods=("POST",))
     @has_access_api
