@@ -1309,3 +1309,17 @@ class TestNestedModelUnknownFields:
                     "x_axis": {"title": "Date"},
                 }
             )
+
+    def test_x_column_alias_survives_axis_styling(self) -> None:
+        config = XYChartConfig.model_validate(
+            {
+                "chart_type": "xy",
+                "x_column": "date",
+                "y": [{"name": "sales", "aggregate": "SUM"}],
+                "x_axis": {"title": "Date"},
+            }
+        )
+        assert config.x is not None
+        assert config.x.name == "date"
+        assert config.x_axis is not None
+        assert config.x_axis.title == "Date"

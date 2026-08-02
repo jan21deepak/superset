@@ -923,6 +923,9 @@ class CurrencyFormat(UnknownFieldCheckMixin):
         return {"symbol": self.symbol, "symbolPosition": self.symbol_position}
 
 
+_X_COLUMN_ALIASES = ("x_column",)
+
+
 def _route_column_shaped_x_axis(data: Any) -> Any:
     """Send a column-shaped ``x_axis`` to ``x``, leaving axis styling alone.
 
@@ -940,8 +943,12 @@ def _route_column_shaped_x_axis(data: Any) -> Any:
         data["x"] = value
     else:
         # Axis styling only: pin the column slot so the shared ``x_axis``
-        # alias does not feed the styling object into ``x``.
-        data = {**data, "x": None}
+        # alias does not feed the styling object into ``x``, preserving a
+        # column supplied under one of the other aliases.
+        column = next(
+            (data[alias] for alias in _X_COLUMN_ALIASES if alias in data), None
+        )
+        data = {**data, "x": column}
     return data
 
 
