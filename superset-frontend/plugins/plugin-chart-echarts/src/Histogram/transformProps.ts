@@ -31,9 +31,13 @@ import {
 import { HistogramChartProps, HistogramTransformedProps } from './types';
 import { LegendOrientation, LegendType, Refs } from '../types';
 import { defaultGrid, defaultYAxis } from '../defaults';
-import { getLegendProps } from '../utils/series';
+import { getChartPadding, getLegendProps } from '../utils/series';
+import { resolveLegendLayout } from '../utils/legendLayout';
 import { getDefaultTooltip } from '../utils/tooltip';
 import { getPercentFormatter } from '../utils/formatters';
+
+// Share of the chart height reserved above the plot when no legend is shown.
+const BASE_GRID_TOP_RATIO = 0.1;
 
 export default function transformProps(
   chartProps: HistogramChartProps,
@@ -119,6 +123,25 @@ export default function transformProps(
     });
   }
 
+  const { effectiveLegendMargin, effectiveLegendType } = resolveLegendLayout({
+    chartHeight: height,
+    chartWidth: width,
+    legendItems: legendOptions,
+    orientation: LegendOrientation.Top,
+    show: showLegend,
+    theme,
+    type: LegendType.Plain,
+  });
+  const legendPadding = getChartPadding(
+    showLegend,
+    LegendOrientation.Top,
+    effectiveLegendMargin,
+  );
+  const gridTop = Math.max(
+    Math.round(height * BASE_GRID_TOP_RATIO),
+    legendPadding.top,
+  );
+
   const tooltipFormatter = (params: CallbackDataParams[]) => {
     const title = params[0].name;
     const rows = params.map(param => {
@@ -157,7 +180,7 @@ export default function transformProps(
       ...defaultGrid,
       left: '5%',
       right: '5%',
-      top: '10%',
+      top: gridTop,
       bottom: '10%',
     },
     xAxis: {
@@ -180,7 +203,7 @@ export default function transformProps(
     series: barSeries,
     legend: {
       ...getLegendProps(
-        LegendType.Scroll,
+        effectiveLegendType,
         LegendOrientation.Top,
         showLegend,
         theme,
