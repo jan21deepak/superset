@@ -140,7 +140,10 @@ class Datasource(BaseSupersetView):
             external_metadata = datasource.external_metadata()
         except SupersetException as ex:
             return json_error_response(str(ex), status=400)
-        return self.json_response(external_metadata)
+        # A virtual dataset whose query yields no resolvable columns can return
+        # ``None`` here; normalize it to an empty list so the response is valid
+        # JSON (empty columns) instead of surfacing a 500 downstream.
+        return self.json_response(external_metadata or [])
 
     @expose("/external_metadata_by_name/")
     @has_access_api

@@ -149,6 +149,26 @@ def test_external_metadata_succeeds_for_authorised_user(
     view.json_response.assert_called_once_with([{"name": "col1"}])
 
 
+@patch("superset.views.datasource.views.security_manager", new_callable=MagicMock)
+@patch("superset.views.datasource.views.DatasourceDAO.get_datasource")
+def test_external_metadata_returns_empty_columns_when_metadata_is_none(
+    mock_get_datasource: MagicMock,
+    mock_security_manager: MagicMock,
+) -> None:
+    """A ``None`` metadata result (e.g. a virtual dataset with no resolvable
+    columns) is normalized to an empty list instead of surfacing a 500."""
+    mock_datasource = MagicMock()
+    mock_datasource.external_metadata.return_value = None
+    mock_get_datasource.return_value = mock_datasource
+    mock_security_manager.raise_for_access.return_value = None
+
+    view = _view_self()
+    raw_fn = _get_view_func("external_metadata")
+    raw_fn(view, "table", 1)
+
+    view.json_response.assert_called_once_with([])
+
+
 # ---------------------------------------------------------------------------
 # Datasource.external_metadata_by_name
 # ---------------------------------------------------------------------------
