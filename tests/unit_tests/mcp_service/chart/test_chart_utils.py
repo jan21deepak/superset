@@ -625,8 +625,10 @@ class TestMapXYConfig:
 
         assert "color_scheme" not in result
 
-    def test_map_xy_config_with_sort_by_metric(self) -> None:
+    @patch("superset.mcp_service.chart.chart_utils.is_column_truly_temporal")
+    def test_map_xy_config_with_sort_by_metric(self, mock_is_temporal) -> None:
         """sort_by maps to the native x_axis_sort form_data keys."""
+        mock_is_temporal.return_value = False
         config = XYChartConfig(
             chart_type="xy",
             x=ColumnRef(name="state"),
@@ -640,8 +642,12 @@ class TestMapXYConfig:
         assert result["x_axis_sort"] == "COUNT(orders)"
         assert result["x_axis_sort_asc"] is False
 
-    def test_map_xy_config_with_sort_by_string_and_ascending(self) -> None:
+    @patch("superset.mcp_service.chart.chart_utils.is_column_truly_temporal")
+    def test_map_xy_config_with_sort_by_string_and_ascending(
+        self, mock_is_temporal
+    ) -> None:
         """A bare string sorts descending; ascending is honored when given."""
+        mock_is_temporal.return_value = False
         descending = XYChartConfig(
             chart_type="xy",
             x=ColumnRef(name="state"),
@@ -674,8 +680,10 @@ class TestMapXYConfig:
         assert "x_axis_sort" not in result
         assert "x_axis_sort_asc" not in result
 
-    def test_map_xy_config_with_series_sort(self) -> None:
+    @patch("superset.mcp_service.chart.chart_utils.is_column_truly_temporal")
+    def test_map_xy_config_with_series_sort(self, mock_is_temporal) -> None:
         """With group_by, sort_by carries a series aggregation."""
+        mock_is_temporal.return_value = False
         config = XYChartConfig(
             chart_type="xy",
             x=ColumnRef(name="state"),
@@ -689,6 +697,26 @@ class TestMapXYConfig:
 
         assert result["x_axis_sort"] == "sum"
         assert result["x_axis_sort_asc"] is False
+
+    @patch("superset.mcp_service.chart.chart_utils.is_column_truly_temporal")
+    def test_map_xy_config_sort_by_warns_on_temporal_axis(
+        self, mock_is_temporal
+    ) -> None:
+        """A temporal x-axis renders chronologically, so the sort is dropped."""
+        mock_is_temporal.return_value = True
+        config = XYChartConfig(
+            chart_type="xy",
+            x=ColumnRef(name="order_date"),
+            y=[ColumnRef(name="revenue", aggregate="SUM")],
+            kind="bar",
+            sort_by="SUM(revenue)",
+        )
+
+        result = map_xy_config(config)
+
+        assert "x_axis_sort" not in result
+        assert "x_axis_sort_asc" not in result
+        assert any("sort_by" in w for w in result["_mcp_warnings"])
 
     def test_xy_sort_by_rejected_with_time_grain(self) -> None:
         """A temporal x-axis is always chronological, so sort_by is rejected."""
