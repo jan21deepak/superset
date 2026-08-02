@@ -930,14 +930,18 @@ def _route_column_shaped_x_axis(data: Any) -> Any:
     the :class:`AxisConfig` styling field, so a column reference passed under
     that key must be redirected before ``AxisConfig`` rejects its fields.
     """
-    if not isinstance(data, dict) or "x" in data:
+    if not isinstance(data, dict) or "x" in data or "x_axis" not in data:
         return data
-    value = data.get("x_axis")
+    value = data["x_axis"]
     if isinstance(value, str) or (
         isinstance(value, dict) and set(value) <= _get_known_fields(ColumnRef)
     ):
         data = {key: val for key, val in data.items() if key != "x_axis"}
         data["x"] = value
+    else:
+        # Axis styling only: pin the column slot so the shared ``x_axis``
+        # alias does not feed the styling object into ``x``.
+        data = {**data, "x": None}
     return data
 
 

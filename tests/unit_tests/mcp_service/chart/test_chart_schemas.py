@@ -1286,3 +1286,26 @@ class TestNestedModelUnknownFields:
         )
         assert config.x_axis is not None
         assert config.x_axis.title == "Category"
+
+    def test_axis_styling_only_x_axis_without_x_column(self) -> None:
+        config = XYChartConfig.model_validate(
+            {
+                "chart_type": "xy",
+                "y": [{"name": "sales", "aggregate": "SUM"}],
+                "x_axis": {"title": "Category"},
+            }
+        )
+        assert config.x is None
+        assert config.x_axis is not None
+        assert config.x_axis.title == "Category"
+
+    def test_mixed_timeseries_missing_x_column_reports_column_error(self) -> None:
+        with pytest.raises(ValidationError, match="ColumnRef"):
+            MixedTimeseriesChartConfig.model_validate(
+                {
+                    "chart_type": "mixed_timeseries",
+                    "y": [{"name": "sales", "aggregate": "SUM"}],
+                    "y_secondary": [{"name": "orders", "aggregate": "SUM"}],
+                    "x_axis": {"title": "Date"},
+                }
+            )
