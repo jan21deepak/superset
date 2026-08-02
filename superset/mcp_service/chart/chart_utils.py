@@ -698,7 +698,7 @@ def add_orientation_config(form_data: Dict[str, Any], config: XYChartConfig) -> 
 
 
 def add_xy_sort_config(
-    form_data: Dict[str, Any], config: XYChartConfig, x_is_temporal: bool
+    form_data: dict[str, Any], config: XYChartConfig, x_is_temporal: bool
 ) -> None:
     """Order the categorical x-axis when ``sort_by`` is set.
 

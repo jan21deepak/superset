@@ -699,6 +699,26 @@ class TestMapXYConfig:
         assert result["x_axis_sort_asc"] is False
 
     @patch("superset.mcp_service.chart.chart_utils.is_column_truly_temporal")
+    def test_map_xy_config_sort_by_with_group_by_matching_x(
+        self, mock_is_temporal
+    ) -> None:
+        """group_by matching x is stripped, so the chart stays single-series."""
+        mock_is_temporal.return_value = False
+        config = XYChartConfig(
+            chart_type="xy",
+            x=ColumnRef(name="state"),
+            y=[ColumnRef(name="orders", aggregate="COUNT")],
+            kind="bar",
+            group_by=ColumnRef(name="state"),
+            sort_by="COUNT(orders)",
+        )
+
+        result = map_xy_config(config)
+
+        assert "groupby" not in result
+        assert result["x_axis_sort"] == "COUNT(orders)"
+
+    @patch("superset.mcp_service.chart.chart_utils.is_column_truly_temporal")
     def test_map_xy_config_sort_by_warns_on_temporal_axis(
         self, mock_is_temporal
     ) -> None:

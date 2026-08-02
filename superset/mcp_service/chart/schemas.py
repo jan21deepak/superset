@@ -1780,7 +1780,12 @@ class XYChartConfig(UnknownFieldCheckMixin):
                 "x-axis is always ordered chronologically. Drop time_grain to "
                 "sort a categorical x-axis."
             )
-        if self.group_by and self.sort_by.column not in SERIES_SORT_TYPES:
+        # map_xy_config() strips group_by entries matching x, so a chart that
+        # only breaks down by the x-axis column stays single-series.
+        multi_series = any(
+            self.x is None or col.name != self.x.name for col in (self.group_by or [])
+        )
+        if multi_series and self.sort_by.column not in SERIES_SORT_TYPES:
             raise ValueError(
                 f"sort_by.column must be one of {sorted(SERIES_SORT_TYPES)} "
                 f"when group_by is set (categories are ordered by an "
