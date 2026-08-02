@@ -697,6 +697,17 @@ def add_orientation_config(form_data: Dict[str, Any], config: XYChartConfig) -> 
         form_data["orientation"] = config.orientation
 
 
+def add_xy_sort_config(form_data: Dict[str, Any], config: XYChartConfig) -> None:
+    """Order the categorical x-axis when ``sort_by`` is set.
+
+    Maps to the native ``x_axis_sort``/``x_axis_sort_asc`` form_data keys.
+    Without a sort_by the axis keeps Superset's category-name ordering.
+    """
+    if config.sort_by:
+        form_data["x_axis_sort"] = config.sort_by.column
+        form_data["x_axis_sort_asc"] = config.sort_by.ascending
+
+
 def configure_temporal_handling(
     form_data: Dict[str, Any],
     x_is_temporal: bool,
@@ -879,6 +890,7 @@ def map_xy_config(  # noqa: C901
     add_color_scheme(form_data, config.color_scheme)
     add_currency_format(form_data, config.currency_format)
     add_xy_data_label_options(form_data, config, x_is_temporal)
+    add_xy_sort_config(form_data, config)
 
     return form_data
 

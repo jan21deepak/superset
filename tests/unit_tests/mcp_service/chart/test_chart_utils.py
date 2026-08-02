@@ -21,6 +21,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from superset.constants import NO_TIME_RANGE
 from superset.mcp_service.chart.chart_utils import (
@@ -623,6 +624,95 @@ class TestMapXYConfig:
         result = map_xy_config(config)
 
         assert "color_scheme" not in result
+
+    def test_map_xy_config_with_sort_by_metric(self) -> None:
+        """sort_by maps to the native x_axis_sort form_data keys."""
+        config = XYChartConfig(
+            chart_type="xy",
+            x=ColumnRef(name="state"),
+            y=[ColumnRef(name="orders", aggregate="COUNT")],
+            kind="bar",
+            sort_by=SortByConfig(column="COUNT(orders)"),
+        )
+
+        result = map_xy_config(config)
+
+        assert result["x_axis_sort"] == "COUNT(orders)"
+        assert result["x_axis_sort_asc"] is False
+
+    def test_map_xy_config_with_sort_by_string_and_ascending(self) -> None:
+        """A bare string sorts descending; ascending is honored when given."""
+        descending = XYChartConfig(
+            chart_type="xy",
+            x=ColumnRef(name="state"),
+            y=[ColumnRef(name="orders", aggregate="COUNT")],
+            kind="bar",
+            sort_by="state",
+        )
+        ascending = XYChartConfig(
+            chart_type="xy",
+            x=ColumnRef(name="state"),
+            y=[ColumnRef(name="orders", aggregate="COUNT")],
+            kind="bar",
+            sort_by=SortByConfig(column="state", ascending=True),
+        )
+
+        assert map_xy_config(descending)["x_axis_sort_asc"] is False
+        assert map_xy_config(ascending)["x_axis_sort_asc"] is True
+
+    def test_map_xy_config_without_sort_by(self) -> None:
+        """No sort_by leaves Superset's category-name ordering in place."""
+        config = XYChartConfig(
+            chart_type="xy",
+            x=ColumnRef(name="state"),
+            y=[ColumnRef(name="orders", aggregate="COUNT")],
+            kind="bar",
+        )
+
+        result = map_xy_config(config)
+
+        assert "x_axis_sort" not in result
+        assert "x_axis_sort_asc" not in result
+
+    def test_map_xy_config_with_series_sort(self) -> None:
+        """With group_by, sort_by carries a series aggregation."""
+        config = XYChartConfig(
+            chart_type="xy",
+            x=ColumnRef(name="state"),
+            y=[ColumnRef(name="orders", aggregate="COUNT")],
+            kind="bar",
+            group_by=ColumnRef(name="category"),
+            sort_by=SortByConfig(column="sum"),
+        )
+
+        result = map_xy_config(config)
+
+        assert result["x_axis_sort"] == "sum"
+        assert result["x_axis_sort_asc"] is False
+
+    def test_xy_sort_by_rejected_with_time_grain(self) -> None:
+        """A temporal x-axis is always chronological, so sort_by is rejected."""
+        with pytest.raises(ValidationError, match="not supported together"):
+            XYChartConfig(
+                chart_type="xy",
+                x=ColumnRef(name="order_date"),
+                y=[ColumnRef(name="revenue", aggregate="SUM")],
+                kind="bar",
+                time_grain="P1M",
+                sort_by="SUM(revenue)",
+            )
+
+    def test_xy_sort_by_column_rejected_with_group_by(self) -> None:
+        """Multi-series charts only support the series aggregations."""
+        with pytest.raises(ValidationError, match="must be one of"):
+            XYChartConfig(
+                chart_type="xy",
+                x=ColumnRef(name="state"),
+                y=[ColumnRef(name="orders", aggregate="COUNT")],
+                kind="bar",
+                group_by=ColumnRef(name="category"),
+                sort_by="COUNT(orders)",
+            )
 
     def test_map_xy_config_with_time_grain_month(self) -> None:
         """Test XY config mapping with monthly time grain"""

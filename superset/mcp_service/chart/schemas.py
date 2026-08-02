@@ -1648,6 +1648,11 @@ def _reject_sql_expression_on_dimension(col: ColumnRef | None, position: str) ->
         )
 
 
+# Values ``x_axis_sort`` accepts when the chart renders multiple series
+# (group_by set): the aggregation used to order categories across series.
+SERIES_SORT_TYPES = frozenset({"name", "sum", "avg", "min", "max"})
+
+
 def _metric_display_label(col: ColumnRef) -> str:
     """Return the display label for a metric column reference."""
     if col.sql_expression:
@@ -1743,6 +1748,46 @@ class XYChartConfig(UnknownFieldCheckMixin):
         ge=1,
         le=10000,
     )
+    sort_by: SortByConfig | None = Field(
+        None,
+        description=(
+            "Order categories on the x-axis. Accepts a bare string (sorts "
+            "descending) or an object with `column` and `ascending`. "
+            "Without group_by, `column` is the x-axis column name or a "
+            "metric label (e.g. 'COUNT(*)'). With group_by, the categories "
+            "are ordered by an aggregation across the series, so `column` "
+            f"must be one of {sorted(SERIES_SORT_TYPES)}. "
+            "Only valid for a categorical x-axis (no time_grain). "
+            "Defaults to category name when unset."
+        ),
+    )
+
+    @field_validator("sort_by", mode="before")
+    @classmethod
+    def coerce_sort_by(cls, v: Any) -> Any:
+        """Accept a bare column/metric label string."""
+        return {"column": v} if isinstance(v, str) else v
+
+    @model_validator(mode="after")
+    def validate_sort_by(self) -> "XYChartConfig":
+        """sort_by only applies to a categorical x-axis, and with group_by
+        only the series aggregations are supported."""
+        if self.sort_by is None:
+            return self
+        if self.time_grain:
+            raise ValueError(
+                "sort_by is not supported together with time_grain: a temporal "
+                "x-axis is always ordered chronologically. Drop time_grain to "
+                "sort a categorical x-axis."
+            )
+        if self.group_by and self.sort_by.column not in SERIES_SORT_TYPES:
+            raise ValueError(
+                f"sort_by.column must be one of {sorted(SERIES_SORT_TYPES)} "
+                f"when group_by is set (categories are ordered by an "
+                f"aggregation across the series), got "
+                f"'{self.sort_by.column}'."
+            )
+        return self
 
     @field_validator("group_by", mode="before")
     @classmethod
