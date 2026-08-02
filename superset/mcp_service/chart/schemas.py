@@ -771,7 +771,7 @@ class UnknownFieldCheckMixin(BaseModel):
         return _check_unknown_fields(data, cls)
 
 
-class ColumnRef(BaseModel):
+class ColumnRef(UnknownFieldCheckMixin):
     model_config = ConfigDict(populate_by_name=True)
 
     name: str | None = Field(
@@ -892,18 +892,18 @@ class ColumnRef(BaseModel):
         )
 
 
-class AxisConfig(BaseModel):
+class AxisConfig(UnknownFieldCheckMixin):
     title: str | None = Field(None, max_length=200)
     scale: Literal["linear", "log"] | None = "linear"
     format: str | None = Field(None, description="e.g. '$,.2f'", max_length=50)
 
 
-class LegendConfig(BaseModel):
+class LegendConfig(UnknownFieldCheckMixin):
     show: bool = True
     position: Literal["top", "bottom", "left", "right"] | None = "right"
 
 
-class CurrencyFormat(BaseModel):
+class CurrencyFormat(UnknownFieldCheckMixin):
     """Currency symbol and placement applied to numeric values."""
 
     model_config = ConfigDict(populate_by_name=True)
@@ -923,10 +923,28 @@ class CurrencyFormat(BaseModel):
         return {"symbol": self.symbol, "symbolPosition": self.symbol_position}
 
 
+def _route_column_shaped_x_axis(data: Any) -> Any:
+    """Send a column-shaped ``x_axis`` to ``x``, leaving axis styling alone.
+
+    ``x_axis`` is both a validation alias of the ``x`` column and the name of
+    the :class:`AxisConfig` styling field, so a column reference passed under
+    that key must be redirected before ``AxisConfig`` rejects its fields.
+    """
+    if not isinstance(data, dict) or "x" in data:
+        return data
+    value = data.get("x_axis")
+    if isinstance(value, str) or (
+        isinstance(value, dict) and set(value) <= _get_known_fields(ColumnRef)
+    ):
+        data = {key: val for key, val in data.items() if key != "x_axis"}
+        data["x"] = value
+    return data
+
+
 LEGEND_POSITION_LITERAL = Literal["top", "bottom", "left", "right"]
 
 
-class FilterConfig(BaseModel):
+class FilterConfig(UnknownFieldCheckMixin):
     model_config = ConfigDict(populate_by_name=True)
 
     column: str = Field(
@@ -994,7 +1012,7 @@ class FilterConfig(BaseModel):
         return self
 
 
-class SortByConfig(BaseModel):
+class SortByConfig(UnknownFieldCheckMixin):
     """Sort specification with explicit direction.
 
     Accepts either this object or a bare column-name string in `sort_by`
@@ -1230,6 +1248,11 @@ class MixedTimeseriesChartConfig(UnknownFieldCheckMixin):
         "Do NOT use adhoc_filters or raw SQL expressions.",
     )
     row_limit: int = Field(10000, description="Max data points", ge=1, le=50000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def route_x_axis_alias(cls, data: Any) -> Any:
+        return _route_column_shaped_x_axis(data)
 
     @field_validator("group_by", "group_by_secondary", mode="before")
     @classmethod
@@ -1748,6 +1771,11 @@ class XYChartConfig(UnknownFieldCheckMixin):
     @classmethod
     def wrap_single_group_by(cls, v: Any) -> Any:
         return _normalize_group_by_input(v)
+
+    @model_validator(mode="before")
+    @classmethod
+    def route_x_axis_alias(cls, data: Any) -> Any:
+        return _route_column_shaped_x_axis(data)
 
     @field_validator("x", mode="before")
     @classmethod
