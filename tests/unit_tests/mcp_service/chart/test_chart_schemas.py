@@ -1204,3 +1204,122 @@ class TestRequestSchemaAliasChoices:
     def test_list_charts_select_columns_columns_alias(self) -> None:
         req = ListChartsRequest.model_validate({"columns": ["id", "slice_name"]})
         assert req.select_columns == ["id", "slice_name"]
+
+
+class TestNestedModelUnknownFields:
+    """Nested config models reject unknown fields like top-level configs do."""
+
+    def test_axis_config_unknown_field(self) -> None:
+        with pytest.raises(ValidationError, match="Unknown field 'sort_by'"):
+            XYChartConfig.model_validate(
+                {
+                    "chart_type": "xy",
+                    "kind": "bar",
+                    "x": {"name": "state"},
+                    "y": [{"name": "orders", "aggregate": "SUM"}],
+                    "x_axis": {"title": "State", "sort_by": "metric"},
+                }
+            )
+
+    def test_column_ref_unknown_field(self) -> None:
+        with pytest.raises(ValidationError, match="Unknown field"):
+            ColumnRef.model_validate({"name": "state", "aggregate_fn": "SUM"})
+
+    def test_legend_config_unknown_field(self) -> None:
+        from superset.mcp_service.chart.schemas import LegendConfig
+
+        with pytest.raises(ValidationError, match="Unknown field"):
+            LegendConfig.model_validate({"show": True, "orientation": "vertical"})
+
+    def test_currency_format_unknown_field(self) -> None:
+        from superset.mcp_service.chart.schemas import CurrencyFormat
+
+        with pytest.raises(ValidationError, match="Unknown field"):
+            CurrencyFormat.model_validate({"symbol": "USD", "decimals": 2})
+
+    def test_currency_format_alias_still_accepted(self) -> None:
+        from superset.mcp_service.chart.schemas import CurrencyFormat
+
+        assert (
+            CurrencyFormat.model_validate(
+                {"symbol": "USD", "symbolPosition": "suffix"}
+            ).symbol_position
+            == "suffix"
+        )
+
+    def test_filter_config_unknown_field(self) -> None:
+        with pytest.raises(ValidationError, match="Unknown field"):
+            FilterConfig.model_validate(
+                {"col": "state", "op": "=", "val": "CA", "negate": True}
+            )
+
+    def test_filter_config_aliases_still_accepted(self) -> None:
+        flt = FilterConfig.model_validate({"col": "state", "opr": "=", "val": "CA"})
+        assert flt.column == "state"
+
+    def test_sort_by_config_unknown_field(self) -> None:
+        from superset.mcp_service.chart.schemas import SortByConfig
+
+        with pytest.raises(ValidationError, match="Unknown field"):
+            SortByConfig.model_validate({"column": "orders", "direction": "asc"})
+
+    def test_column_shaped_x_axis_alias_still_routes_to_x(self) -> None:
+        config = XYChartConfig.model_validate(
+            {
+                "chart_type": "xy",
+                "x_axis": {"name": "category"},
+                "y": [{"name": "sales", "aggregate": "SUM"}],
+            }
+        )
+        assert config.x is not None
+        assert config.x.name == "category"
+        assert config.x_axis is None
+
+    def test_axis_shaped_x_axis_stays_axis_config(self) -> None:
+        config = XYChartConfig.model_validate(
+            {
+                "chart_type": "xy",
+                "x": {"name": "category"},
+                "y": [{"name": "sales", "aggregate": "SUM"}],
+                "x_axis": {"title": "Category"},
+            }
+        )
+        assert config.x_axis is not None
+        assert config.x_axis.title == "Category"
+
+    def test_axis_styling_only_x_axis_without_x_column(self) -> None:
+        config = XYChartConfig.model_validate(
+            {
+                "chart_type": "xy",
+                "y": [{"name": "sales", "aggregate": "SUM"}],
+                "x_axis": {"title": "Category"},
+            }
+        )
+        assert config.x is None
+        assert config.x_axis is not None
+        assert config.x_axis.title == "Category"
+
+    def test_mixed_timeseries_missing_x_column_reports_column_error(self) -> None:
+        with pytest.raises(ValidationError, match="ColumnRef"):
+            MixedTimeseriesChartConfig.model_validate(
+                {
+                    "chart_type": "mixed_timeseries",
+                    "y": [{"name": "sales", "aggregate": "SUM"}],
+                    "y_secondary": [{"name": "orders", "aggregate": "SUM"}],
+                    "x_axis": {"title": "Date"},
+                }
+            )
+
+    def test_x_column_alias_survives_axis_styling(self) -> None:
+        config = XYChartConfig.model_validate(
+            {
+                "chart_type": "xy",
+                "x_column": "date",
+                "y": [{"name": "sales", "aggregate": "SUM"}],
+                "x_axis": {"title": "Date"},
+            }
+        )
+        assert config.x is not None
+        assert config.x.name == "date"
+        assert config.x_axis is not None
+        assert config.x_axis.title == "Date"
