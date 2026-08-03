@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import asyncio
 import json
 import logging
 import os
@@ -154,7 +155,46 @@ async_query_manager: AsyncQueryManager = LocalProxy(
 cache_manager = CacheManager()
 celery_app = celery.Celery()
 csrf = CSRFProtect()
-db = get_sqla_class()()
+
+
+# flask-sqlalchemy scopes ``db.session`` with this identity function by default
+# (greenlet.getcurrent when greenlet is installed, else the thread id).
+try:
+    from flask_sqlalchemy import _ident_func
+except ImportError:  # pragma: no cover - defensive, matches fsqla's own fallback
+    try:
+        from greenlet import getcurrent as _ident_func
+    except ImportError:
+        from threading import get_ident as _ident_func
+
+
+def _session_scopefunc() -> Any:
+    """Scope ``db.session`` per asyncio task when inside a running event loop.
+
+    Async MCP tool calls are asyncio tasks that all run in the same greenlet on
+    the event-loop thread, so flask-sqlalchemy's default greenlet-based scope
+    resolves every concurrent call to one shared ``Session``. Each call runs
+    inside its own Flask app context, and the per-call teardown calls
+    ``session.remove()`` unconditionally — so the first call to finish removes
+    the ``Session`` still in use by every other in-flight call, detaching their
+    ORM instances (``DetachedInstanceError``).
+
+    Keying the scope on the current asyncio task gives each concurrent tool call
+    its own ``Session`` and confines each teardown's ``remove()`` to its own
+    call. Outside a running event loop (the web/WSGI and Celery tiers) there is
+    no task, so the identity falls back to the default and behaviour is
+    unchanged.
+    """
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    if task is not None:
+        return task
+    return _ident_func()
+
+
+db = get_sqla_class()(session_options={"scopefunc": _session_scopefunc})
 
 # make_versioned() MUST be called immediately after db is constructed and before
 # any versioned model class is defined.  Continuum patches the SQLAlchemy
