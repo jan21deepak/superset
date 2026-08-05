@@ -71,6 +71,10 @@ class UpdateDatasetRelationshipCommand(BaseDatasetRelationshipCommand):
         source_dataset, target_dataset = self.validate_datasets(
             source_dataset_id, target_dataset_id, exceptions
         )
+        # a dataset that doesn't exist is a validation error, not a denial
+        if exceptions:
+            raise DatasetRelationshipInvalidError(exceptions=exceptions)
+
         # both the current and the requested ends must be accessible
         self.raise_for_dataset_access(
             self._model.source_dataset,

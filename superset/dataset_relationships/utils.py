@@ -29,8 +29,11 @@ def is_relationship_visible(relationship: DatasetRelationship) -> bool:
     Relationships are visible only to users who can read *both* datasets.
 
     An endpoint the user cannot read hides the relationship entirely rather than
-    partially exposing it.
+    partially exposing it. An end that can't be resolved at all (a soft-deleted
+    dataset, say) is hidden too: there is nothing to check access against.
     """
+    if relationship.source_dataset is None or relationship.target_dataset is None:
+        return False
     try:
         security_manager.raise_for_access(datasource=relationship.source_dataset)
         security_manager.raise_for_access(datasource=relationship.target_dataset)

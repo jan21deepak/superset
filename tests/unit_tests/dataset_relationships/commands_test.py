@@ -235,6 +235,24 @@ def test_delete(datasets: Session, security_manager: MagicMock) -> None:
     assert DatasetRelationshipDAO.find_by_id(relationship.id) is None
 
 
+def test_delete_denies_a_relationship_whose_dataset_cannot_be_loaded(
+    datasets: Session, security_manager: MagicMock, mocker: MockerFixture
+) -> None:
+    """
+    A dataset that no longer resolves (soft-deleted, say) leaves nothing to
+    check access against, so the write is denied rather than waved through.
+    """
+    relationship = CreateDatasetRelationshipCommand(_payload(datasets)).run()
+    mocker.patch.object(
+        type(relationship),
+        "source_dataset",
+        mocker.PropertyMock(return_value=None),
+    )
+
+    with pytest.raises(SupersetSecurityException):
+        DeleteDatasetRelationshipCommand([relationship.id]).run()
+
+
 def test_delete_missing_relationship(
     datasets: Session, security_manager: MagicMock
 ) -> None:

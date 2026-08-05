@@ -31,6 +31,8 @@ from superset.commands.dataset_relationship.exceptions import (
 )
 from superset.connectors.sqla.models import SqlaTable
 from superset.daos.dataset_relationship import DatasetRelationshipDAO
+from superset.errors import ErrorLevel, SupersetError, SupersetErrorType
+from superset.exceptions import SupersetSecurityException
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +74,22 @@ class BaseDatasetRelationshipCommand(BaseCommand):
 
     @staticmethod
     def raise_for_dataset_access(*datasets: SqlaTable | None) -> None:
+        """
+        An end that can't be resolved (a soft-deleted dataset, say) is denied
+        rather than skipped: there is nothing left to check access against.
+        """
         for dataset in datasets:
-            if dataset is not None:
-                security_manager.raise_for_access(datasource=dataset)
+            if dataset is None:
+                raise SupersetSecurityException(
+                    SupersetError(
+                        error_type=SupersetErrorType.DATASOURCE_SECURITY_ACCESS_ERROR,
+                        message=_(
+                            "One of the datasets of this relationship is not accessible"
+                        ),
+                        level=ErrorLevel.ERROR,
+                    )
+                )
+            security_manager.raise_for_access(datasource=dataset)
 
     def validate_columns(  # pylint: disable=too-many-arguments
         self,

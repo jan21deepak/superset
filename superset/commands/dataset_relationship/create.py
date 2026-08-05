@@ -56,6 +56,10 @@ class CreateDatasetRelationshipCommand(BaseDatasetRelationshipCommand):
             self._properties["target_dataset_id"],
             exceptions,
         )
+        # a dataset that doesn't exist is a validation error, not a denial
+        if exceptions:
+            raise DatasetRelationshipInvalidError(exceptions=exceptions)
+
         self.raise_for_dataset_access(source_dataset, target_dataset)
         self.validate_columns(
             source_dataset, target_dataset, self._column_pairs, exceptions
