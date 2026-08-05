@@ -473,6 +473,20 @@ class DashboardCopySchema(Schema):
     )
 
 
+class DashboardCloneGraphSchema(Schema):
+    version_label = fields.String(
+        required=True,
+        validate=Length(1, 250),
+        metadata={
+            "description": (
+                "Human-readable label for the cloned version (e.g. 'v3'). Used "
+                "to distinguish the cloned dashboard, charts and datasets from "
+                "the source graph."
+            )
+        },
+    )
+
+
 class DashboardPutSchema(BaseDashboardSchema):
     dashboard_title = fields.String(
         metadata={"description": dashboard_title_description},

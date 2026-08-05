@@ -116,6 +116,10 @@ class DashboardCopyError(CommandInvalidError):
     message = _("Dashboard cannot be copied due to invalid parameters.")
 
 
+class DashboardCloneError(CreateFailedError):
+    message = _("Dashboard version could not be cloned.")
+
+
 class DashboardFaveError(CommandInvalidError):
     message = _("Dashboard cannot be favorited.")
 
