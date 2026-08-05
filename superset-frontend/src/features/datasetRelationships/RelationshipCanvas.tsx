@@ -68,8 +68,16 @@ export default function RelationshipCanvas({
   const [nodes, setNodes, onNodesChange] = useNodesState(graph.nodes);
   const { edges } = graph;
 
+  // a reload keeps wherever the user dragged a dataset to; only datasets that
+  // weren't on the canvas yet get a laid out position
   useEffect(() => {
-    setNodes(graph.nodes);
+    setNodes(current => {
+      const positions = new Map(current.map(node => [node.id, node.position]));
+      return graph.nodes.map(node => ({
+        ...node,
+        position: positions.get(node.id) ?? node.position,
+      }));
+    });
   }, [graph, setNodes]);
 
   // several relationships can connect the same two datasets, so the text of a

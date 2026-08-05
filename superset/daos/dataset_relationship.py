@@ -96,7 +96,8 @@ class DatasetRelationshipDAO(BaseDAO[DatasetRelationship]):
                 DatasetRelationship.source_dataset_id.in_(dataset_ids),
                 DatasetRelationship.target_dataset_id.in_(dataset_ids),
             )
-        return query.limit(limit).all()
+        # ordered so that the cap truncates the same way on every call
+        return query.order_by(DatasetRelationship.id).limit(limit).all()
 
     @staticmethod
     def find_datasets(dataset_ids: list[int]) -> dict[int, SqlaTable]:
