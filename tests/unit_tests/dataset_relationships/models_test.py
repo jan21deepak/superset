@@ -81,6 +81,37 @@ def test_dropping_a_column_flags_the_relationship(datasets: Session) -> None:
     assert relationship.is_valid is False
 
 
+def test_dropping_one_of_several_columns_flags_the_relationship(
+    datasets: Session,
+) -> None:
+    """
+    Losing part of a multi-column mapping is a broken relationship too: the
+    pair survives the column with a null side rather than disappearing.
+    """
+    from superset.connectors.sqla.models import TableColumn
+
+    orders = datasets.query(SqlaTable).filter_by(table_name="orders").one()
+    customers = datasets.query(SqlaTable).filter_by(table_name="customers").one()
+    relationship = _relationship(datasets)
+    relationship.columns.append(
+        DatasetRelationshipColumn(
+            source_column_id=orders.columns[0].id,
+            target_column_id=customers.columns[-1].id,
+            ordinal=1,
+        )
+    )
+    datasets.flush()
+    assert relationship.is_valid is True
+
+    column = datasets.query(TableColumn).get(relationship.columns[1].source_column_id)
+    datasets.delete(column)
+    datasets.flush()
+    datasets.expire(relationship)
+
+    assert len(relationship.columns) == 2
+    assert relationship.is_valid is False
+
+
 def test_find_by_dataset_matches_either_end(datasets: Session) -> None:
     relationship = _relationship(datasets)
 

@@ -159,8 +159,8 @@ export default function RelationshipModal({
     setJoinType(relationship?.join_type ?? 'inner');
     setPairs(
       relationship?.columns.map(column => ({
-        source_column_id: column.source_column_id,
-        target_column_id: column.target_column_id,
+        source_column_id: column.source_column_id ?? undefined,
+        target_column_id: column.target_column_id ?? undefined,
       })) ?? [{}],
     );
   }, [relationship, show]);

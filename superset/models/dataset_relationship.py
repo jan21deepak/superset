@@ -131,8 +131,9 @@ class DatasetRelationship(Model, AuditMixinNullable, UUIDMixin):
         Whether every declared column pair still points at existing columns
         belonging to the datasets of the relationship.
 
-        Column pairs are removed when a column is dropped, so a relationship
-        without pairs is dangling and is flagged rather than silently ignored.
+        Dropping a column nulls out its side of the pair rather than deleting
+        the pair, so a partially broken mapping is flagged instead of quietly
+        joining on fewer columns than were declared.
         """
         if not self.columns:
             return False
@@ -145,7 +146,7 @@ class DatasetRelationship(Model, AuditMixinNullable, UUIDMixin):
         )
 
     @property
-    def column_pairs(self) -> list[tuple[int, int]]:
+    def column_pairs(self) -> list[tuple[int | None, int | None]]:
         """The (source, target) column pairs, ordered by ordinal"""
         return [
             (column.source_column_id, column.target_column_id)
@@ -171,18 +172,20 @@ class DatasetRelationshipColumn(Model):
         ForeignKey("dataset_relationships.id", ondelete="CASCADE"),
         nullable=False,
     )
+    # nulled rather than deleted when a column is dropped, so that the
+    # relationship can be flagged as pointing at a column that no longer exists
     source_column_id = Column(
-        Integer, ForeignKey("table_columns.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("table_columns.id", ondelete="SET NULL"), nullable=True
     )
     target_column_id = Column(
-        Integer, ForeignKey("table_columns.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("table_columns.id", ondelete="SET NULL"), nullable=True
     )
     ordinal = Column(Integer, nullable=False, default=0)
 
-    source_column: Mapped[TableColumn] = relationship(
+    source_column: Mapped[TableColumn | None] = relationship(
         "TableColumn", foreign_keys=[source_column_id]
     )
-    target_column: Mapped[TableColumn] = relationship(
+    target_column: Mapped[TableColumn | None] = relationship(
         "TableColumn", foreign_keys=[target_column_id]
     )
     dataset_relationship: Mapped[DatasetRelationship] = relationship(

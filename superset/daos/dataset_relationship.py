@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import or_
@@ -30,6 +31,22 @@ from superset.models.dataset_relationship import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _complete_mapping(
+    pairs: Sequence[tuple[int | None, int | None]],
+) -> tuple[tuple[int, int], ...] | None:
+    """
+    The mapping as a comparable key, or None when a column has been dropped.
+    """
+    complete = [
+        (source, target)
+        for source, target in pairs
+        if source is not None and target is not None
+    ]
+    if len(complete) != len(pairs):
+        return None
+    return tuple(sorted(complete))
 
 
 class DatasetRelationshipDAO(BaseDAO[DatasetRelationship]):
@@ -67,7 +84,7 @@ class DatasetRelationshipDAO(BaseDAO[DatasetRelationship]):
     def validate_column_mapping_uniqueness(
         source_dataset_id: int,
         target_dataset_id: int,
-        column_pairs: list[tuple[int, int]],
+        column_pairs: Sequence[tuple[int | None, int | None]],
         relationship_id: int | None = None,
     ) -> bool:
         """
@@ -82,8 +99,16 @@ class DatasetRelationshipDAO(BaseDAO[DatasetRelationship]):
         )
         if relationship_id:
             query = query.filter(DatasetRelationship.id != relationship_id)
-        existing = {tuple(sorted(rel.column_pairs)) for rel in query.all()}
-        return tuple(sorted(column_pairs)) not in existing
+        # a mapping with a dropped column can't clash with anything
+        mapping = _complete_mapping(column_pairs)
+        if mapping is None:
+            return True
+        existing = {
+            existing_mapping
+            for rel in query.all()
+            if (existing_mapping := _complete_mapping(rel.column_pairs)) is not None
+        }
+        return mapping not in existing
 
     @classmethod
     def create_relationship(

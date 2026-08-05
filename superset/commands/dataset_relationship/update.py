@@ -80,7 +80,12 @@ class UpdateDatasetRelationshipCommand(BaseDatasetRelationshipCommand):
         )
 
         column_pairs = self._column_pairs
-        if column_pairs is None:
+        datasets_changed = (
+            source_dataset_id != self._model.source_dataset_id
+            or target_dataset_id != self._model.target_dataset_id
+        )
+        if column_pairs is None and datasets_changed:
+            # the mapping is untouched but has to fit the new datasets
             column_pairs = [
                 {
                     "source_column_id": pair.source_column_id,
@@ -89,13 +94,14 @@ class UpdateDatasetRelationshipCommand(BaseDatasetRelationshipCommand):
                 }
                 for pair in self._model.columns
             ]
-        self.validate_columns(
-            source_dataset,
-            target_dataset,
-            column_pairs,
-            exceptions,
-            relationship_id=self._model_id,
-        )
+        if column_pairs is not None:
+            self.validate_columns(
+                source_dataset,
+                target_dataset,
+                column_pairs,
+                exceptions,
+                relationship_id=self._model_id,
+            )
 
         if exceptions:
             raise DatasetRelationshipInvalidError(exceptions=exceptions)

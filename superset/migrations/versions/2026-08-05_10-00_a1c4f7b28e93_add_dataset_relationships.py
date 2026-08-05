@@ -85,18 +85,20 @@ def upgrade() -> None:
         "dataset_relationship_columns",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("relationship_id", sa.Integer(), nullable=False),
-        sa.Column("source_column_id", sa.Integer(), nullable=False),
-        sa.Column("target_column_id", sa.Integer(), nullable=False),
+        sa.Column("source_column_id", sa.Integer(), nullable=True),
+        sa.Column("target_column_id", sa.Integer(), nullable=True),
         sa.Column("ordinal", sa.Integer(), server_default="0", nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(
             ["relationship_id"], ["dataset_relationships.id"], ondelete="CASCADE"
         ),
+        # dropping a column nulls its side of the pair, leaving the mapping
+        # behind to be flagged as broken
         sa.ForeignKeyConstraint(
-            ["source_column_id"], ["table_columns.id"], ondelete="CASCADE"
+            ["source_column_id"], ["table_columns.id"], ondelete="SET NULL"
         ),
         sa.ForeignKeyConstraint(
-            ["target_column_id"], ["table_columns.id"], ondelete="CASCADE"
+            ["target_column_id"], ["table_columns.id"], ondelete="SET NULL"
         ),
         sa.UniqueConstraint(
             "relationship_id",

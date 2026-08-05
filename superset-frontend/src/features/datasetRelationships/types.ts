@@ -24,8 +24,9 @@ export type JoinType = 'inner' | 'left' | 'right' | 'full';
 
 export interface RelationshipColumn {
   id?: number;
-  source_column_id: number;
-  target_column_id: number;
+  // null once the column has been dropped
+  source_column_id: number | null;
+  target_column_id: number | null;
   source_column_name?: string | null;
   target_column_name?: string | null;
   ordinal: number;
