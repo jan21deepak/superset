@@ -26,6 +26,7 @@ from flask_appbuilder.models.sqla import Model
 from superset import db
 from superset.commands.base import BaseCommand
 from superset.commands.database.exceptions import (
+    DatabaseConnectionFailedError,
     DatabaseExistsValidationError,
     DatabaseInvalidError,
     DatabaseNotFoundError,
@@ -89,18 +90,28 @@ class UpdateDatabaseCommand(BaseCommand):
         database = DatabaseDAO.update(self._model, self._properties)
         database.set_sqlalchemy_uri(database.sqlalchemy_uri)
 
-        new_catalog = database.get_default_catalog()
-
-        # update assets when the database catalog changes, if the database was not
-        # configured with multi-catalog support; if it was enabled or is enabled in the
-        # update we don't update the assets
-        if (
-            force_update
-            or new_catalog != original_catalog
-            and not self._model.allow_multi_catalog
-            and not database.allow_multi_catalog
-        ):
-            self._update_catalog_attribute(self._model.id, new_catalog)
+        # The new connection can also be unreachable, eg when updating metadata of a
+        # database that is permanently down. In that case we can't know the catalog,
+        # so the assets are left untouched.
+        try:
+            new_catalog = database.get_default_catalog()
+        except Exception:  # pylint: disable=broad-except
+            logger.warning(
+                "Unable to get the default catalog of database %s",
+                database.database_name,
+                exc_info=True,
+            )
+        else:
+            # update assets when the database catalog changes, if the database was not
+            # configured with multi-catalog support; if it was enabled or is enabled in
+            # the update we don't update the assets
+            if (
+                force_update
+                or new_catalog != original_catalog
+                and not self._model.allow_multi_catalog
+                and not database.allow_multi_catalog
+            ):
+                self._update_catalog_attribute(self._model.id, new_catalog)
 
         # if the database name changed we need to update any existing permissions,
         # since they're name based
@@ -114,6 +125,14 @@ class UpdateDatabaseCommand(BaseCommand):
             ).run()
         except (OAuth2RedirectError, MissingOAuth2TokenError):
             pass
+        except DatabaseConnectionFailedError:
+            # Permissions can't be synced while the connection is down, but that
+            # shouldn't prevent the metadata of the database from being updated.
+            logger.warning(
+                "Unable to sync permissions of database %s, connection failed",
+                database.database_name,
+                exc_info=True,
+            )
 
         return database
 
