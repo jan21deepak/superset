@@ -91,6 +91,7 @@
     { "path": "./plugins/legacy-preset-chart-nvd3" },
     { "path": "./plugins/plugin-chart-ag-grid-table" },
     { "path": "./plugins/plugin-chart-cartodiagram" },
+    { "path": "./plugins/plugin-chart-custom-filter" },
     { "path": "./plugins/preset-chart-deckgl" },
     { "path": "./plugins/plugin-chart-echarts" },
     { "path": "./plugins/plugin-chart-point-cluster-map" },

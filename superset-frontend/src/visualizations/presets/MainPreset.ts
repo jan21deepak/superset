@@ -85,6 +85,10 @@ import {
 } from 'src/chartCustomizations/components';
 import { PivotTableChartPlugin as PivotTableChartPluginV2 } from '@superset-ui/plugin-chart-pivot-table';
 import { HandlebarsChartPlugin } from '@superset-ui/plugin-chart-handlebars';
+import {
+  CustomControlsChartPlugin,
+  CustomDateFilterChartPlugin,
+} from '@superset-ui/plugin-chart-custom-filter';
 import { ChartCustomizationPlugins, FilterPlugins } from 'src/constants';
 import AgGridTableChartPlugin from '@superset-ui/plugin-chart-ag-grid-table';
 import TimeTableChartPlugin from '../TimeTable';
@@ -195,6 +199,12 @@ export default class MainPreset extends Preset {
         new EchartsTreeChartPlugin().configure({ key: VizType.Tree }),
         new EchartsSunburstChartPlugin().configure({ key: VizType.Sunburst }),
         new HandlebarsChartPlugin().configure({ key: VizType.Handlebars }),
+        new CustomControlsChartPlugin().configure({
+          key: VizType.CustomControls,
+        }),
+        new CustomDateFilterChartPlugin().configure({
+          key: VizType.CustomDateFilter,
+        }),
         new EchartsBubbleChartPlugin().configure({ key: VizType.Bubble }),
         new CartodiagramPlugin({
           defaultLayers: [
