@@ -930,9 +930,14 @@ class Superset(BaseSupersetView):
         return json_success(json.dumps(sanitize_datasource_data(datasource.data)))
 
     @event_logger.log_this
-    @has_access
     @expose("/language_pack/<lang>/")
     def language_pack(self, lang: str) -> FlaskResponse:
+        # Intentionally unauthenticated: the response is a static gettext
+        # catalog shipped with the application, identical for every principal
+        # and containing no user, dashboard or datasource data. Embedded
+        # dashboards load it with a bare `fetch()` that carries no session
+        # cookie and no guest token, so requiring authentication here leaves
+        # the embedded SPA permanently untranslated.
         # Only allow expected language formats like "en", "pt_BR", etc.
         if not re.match(r"^[a-z]{2,3}(_[A-Z]{2})?$", lang):
             abort(400, "Invalid language code")
