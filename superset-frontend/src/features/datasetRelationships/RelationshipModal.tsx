@@ -186,6 +186,17 @@ export default function RelationshipModal({
     );
   };
 
+  // columns belong to a dataset, so switching one clears its side of the pairs
+  const changeDataset = (side: 'source' | 'target', datasetId: number) => {
+    const key = side === 'source' ? 'source_column_id' : 'target_column_id';
+    setPairs(current => current.map(pair => ({ ...pair, [key]: undefined })));
+    if (side === 'source') {
+      setSourceDatasetId(datasetId);
+    } else {
+      setTargetDatasetId(datasetId);
+    }
+  };
+
   const updatePair = (index: number, pair: ColumnPair) =>
     setPairs(current =>
       current.map((item, position) =>
@@ -222,7 +233,7 @@ export default function RelationshipModal({
           ariaLabel={t('Source dataset')}
           value={sourceDatasetId}
           options={loadDatasetOptions}
-          onChange={value => setSourceDatasetId(value as number)}
+          onChange={value => changeDataset('source', value as number)}
         />
       </StyledField>
       <StyledField>
@@ -231,7 +242,7 @@ export default function RelationshipModal({
           ariaLabel={t('Target dataset')}
           value={targetDatasetId}
           options={loadDatasetOptions}
-          onChange={value => setTargetDatasetId(value as number)}
+          onChange={value => changeDataset('target', value as number)}
         />
       </StyledField>
       <StyledField>
