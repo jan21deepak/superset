@@ -20,6 +20,10 @@
 /* eslint prefer-const: 2 */
 import { nanoid } from 'nanoid';
 import { SupersetClient } from '@superset-ui/core';
+import type {
+  DataMaskStateWithId,
+  NativeFiltersState,
+} from '@superset-ui/core';
 import type { Middleware, Dispatch, Action } from 'redux';
 
 import { safeStringify } from '../utils/safeStringify';
@@ -27,7 +31,10 @@ import { LOG_EVENT } from '../logger/actions';
 import {
   LOG_EVENT_TYPE_TIMING,
   LOG_ACTIONS_SPA_NAVIGATION,
+  LOG_ACTIONS_SELECT_DASHBOARD_TAB,
+  LOG_ACTIONS_CHANGE_DASHBOARD_FILTER,
 } from '../logger/LogUtils';
+import { getAppliedFilterLogEntries } from '../logger/filterLogUtils';
 import DebouncedMessageQueue from '../utils/DebouncedMessageQueue';
 import { ensureAppRoot } from '../utils/navigationUtils';
 import type { DashboardInfo, DashboardLayoutState } from '../dashboard/types';
@@ -82,7 +89,17 @@ interface LoggerRootState {
   impressionId?: string;
   dashboardLayout?: DashboardLayoutState;
   sqlLab?: SqlLabState;
+  dataMask?: DataMaskStateWithId;
+  nativeFilters?: NativeFiltersState;
 }
+
+// Events that gain the native filter state in effect at the time. Kept to a
+// small allowlist: high frequency events such as `load_chart` fire per chart
+// per render and would balloon the payload.
+const FILTER_CONTEXT_EVENTS = new Set<string>([
+  LOG_ACTIONS_CHANGE_DASHBOARD_FILTER,
+  LOG_ACTIONS_SELECT_DASHBOARD_TAB,
+]);
 
 interface LoggerStore {
   getState: () => LoggerRootState;
@@ -155,8 +172,15 @@ const loggerMiddleware: Middleware<
     }
 
     const logAction = action as LogEventAction;
-    const { dashboardInfo, explore, impressionId, dashboardLayout, sqlLab } =
-      store.getState();
+    const {
+      dashboardInfo,
+      explore,
+      impressionId,
+      dashboardLayout,
+      sqlLab,
+      dataMask,
+      nativeFilters,
+    } = store.getState();
     let logMetadata: LogEventData = {
       impression_id: impressionId,
       version: 'v2',
@@ -228,6 +252,19 @@ const loggerMiddleware: Middleware<
       const { meta } = dashboardLayout.present[eventData.target_id];
       // chart name or tab/header text
       eventData.target_name = meta.chartId ? meta.sliceName : meta.text;
+    }
+
+    if (
+      FILTER_CONTEXT_EVENTS.has(eventName) &&
+      eventData.applied_filters === undefined
+    ) {
+      const appliedFilters = getAppliedFilterLogEntries(
+        nativeFilters?.filters,
+        dataMask,
+      );
+      if (appliedFilters.length) {
+        eventData.applied_filters = appliedFilters;
+      }
     }
 
     logMessageQueue.append(eventData);

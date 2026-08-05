@@ -56,6 +56,7 @@ export enum FeatureFlag {
   GlobalTaskFramework = 'GLOBAL_TASK_FRAMEWORK',
   GranularExportControls = 'GRANULAR_EXPORT_CONTROLS',
   ListviewsDefaultCardView = 'LISTVIEWS_DEFAULT_CARD_VIEW',
+  LogFilterValues = 'LOG_FILTER_VALUES',
   Matrixify = 'MATRIXIFY',
   ScheduledQueries = 'SCHEDULED_QUERIES',
   SemanticLayers = 'SEMANTIC_LAYERS',

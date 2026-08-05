@@ -907,6 +907,12 @@ DEFAULT_FEATURE_FLAGS: dict[str, bool] = {
     # @lifecycle: stable
     # @category: runtime_config
     "LISTVIEWS_DEFAULT_CARD_VIEW": False,
+    # Include native filter values in dashboard log events. Filter values are user
+    # data and can be sensitive, so only filter names and a set/unset flag are
+    # logged unless this is enabled.
+    # @lifecycle: stable
+    # @category: runtime_config
+    "LOG_FILTER_VALUES": False,
     # Hide user info in the navigation menu
     # @lifecycle: stable
     # @category: runtime_config

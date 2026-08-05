@@ -370,6 +370,13 @@
         "category": "runtime_config"
       },
       {
+        "name": "LOG_FILTER_VALUES",
+        "default": false,
+        "lifecycle": "stable",
+        "description": "Include native filter values in dashboard log events. Filter values are user data and can be sensitive, so only filter names and a set/unset flag are logged unless this is enabled.",
+        "category": "runtime_config"
+      },
+      {
         "name": "MENU_HIDE_USER_INFO",
         "default": false,
         "lifecycle": "stable",

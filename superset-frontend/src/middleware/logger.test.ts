@@ -22,6 +22,7 @@ import { LOG_EVENT } from 'src/logger/actions';
 import {
   LOG_ACTIONS_LOAD_CHART,
   LOG_ACTIONS_SPA_NAVIGATION,
+  LOG_ACTIONS_SELECT_DASHBOARD_TAB,
 } from 'src/logger/LogUtils';
 import { Dispatch } from 'redux';
 
@@ -208,5 +209,42 @@ describe('logger middleware', () => {
 
     const formData = beaconMock.mock.calls[0][1];
     expect(formData.getAll('guest_token')[0]).toMatch('token');
+  });
+
+  const filterStore = {
+    getState: () => ({
+      ...mockStore.getState(),
+      dataMask: {
+        'NATIVE_FILTER-1': { filterState: { value: ['done'] } },
+      },
+      nativeFilters: {
+        filters: {
+          'NATIVE_FILTER-1': {
+            id: 'NATIVE_FILTER-1',
+            name: 'Status',
+            type: 'NATIVE_FILTER',
+          },
+        },
+      },
+    }),
+    dispatch: ((a: unknown) => a) as Dispatch,
+  };
+
+  test('attaches applied filter context to allowlisted events', () => {
+    const eventData = (logger as Function)(filterStore)(next)({
+      type: LOG_EVENT,
+      payload: {
+        eventName: LOG_ACTIONS_SELECT_DASHBOARD_TAB,
+        eventData: { target_id: 'TAB-1' },
+      },
+    });
+    expect(eventData.applied_filters).toEqual([
+      { id: 'NATIVE_FILTER-1', name: 'Status', is_set: true },
+    ]);
+  });
+
+  test('does not attach filter context to other events', () => {
+    const eventData = (logger as Function)(filterStore)(next)(action);
+    expect(eventData.applied_filters).toBeUndefined();
   });
 });
