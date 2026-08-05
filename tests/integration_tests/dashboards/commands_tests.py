@@ -15,12 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 from unittest.mock import MagicMock, patch  # noqa: F401
+from uuid import uuid4
 
 import pytest
 import yaml
 from werkzeug.utils import secure_filename
 
 from superset import db, security_manager
+from superset.commands.dashboard.clone_graph import CloneDashboardGraphCommand
 from superset.commands.dashboard.copy import CopyDashboardCommand
 from superset.commands.dashboard.delete import DeleteEmbeddedDashboardCommand
 from superset.commands.dashboard.exceptions import (
@@ -809,6 +811,120 @@ class TestCopyDashboardCommand(SupersetTestCase):
             command = CopyDashboardCommand(example_dashboard, invalid_copy_data)
             with self.assertRaises(DashboardInvalidError):  # noqa: PT027
                 command.run()
+
+
+class TestCloneDashboardGraphCommand(SupersetTestCase):
+    def _build_graph(self):
+        """Create a minimal, self-contained dashboard graph.
+
+        A database + virtual dataset + chart + dashboard, so the clone can be
+        exercised without depending on the (heavyweight) example fixtures.
+        """
+        database = Database(
+            database_name=f"clone_test_{uuid4().hex[:8]}",
+            sqlalchemy_uri="sqlite://",
+            uuid=uuid4(),
+        )
+        db.session.add(database)
+        db.session.flush()
+        dataset = SqlaTable(
+            table_name=f"virt_{uuid4().hex[:8]}",
+            database=database,
+            sql="SELECT 1 AS a, 2 AS b",
+            uuid=uuid4(),
+        )
+        db.session.add(dataset)
+        db.session.flush()
+        slice_ = Slice(
+            slice_name="clone test chart",
+            datasource_type="table",
+            datasource_id=dataset.id,
+            viz_type="table",
+            params=json.dumps({"datasource": f"{dataset.id}__table"}),
+            uuid=uuid4(),
+        )
+        db.session.add(slice_)
+        db.session.flush()
+        position = {
+            f"CHART-{slice_.uuid}": {
+                "type": "CHART",
+                "id": f"CHART-{slice_.uuid}",
+                "children": [],
+                "meta": {
+                    "uuid": str(slice_.uuid),
+                    "chartId": slice_.id,
+                    "sliceName": slice_.slice_name,
+                    "width": 4,
+                    "height": 50,
+                },
+            }
+        }
+        dashboard = Dashboard(
+            dashboard_title="Clone Source",
+            slug=f"clone-src-{uuid4().hex[:8]}",
+            position_json=json.dumps(position),
+            slices=[slice_],
+            published=True,
+            uuid=uuid4(),
+        )
+        db.session.add(dashboard)
+        db.session.commit()
+        return database, dataset, slice_, dashboard
+
+    def test_clone_dashboard_graph_command(self):
+        """Cloning a graph yields a fully isolated variant sharing only the DB."""
+        with self.client.application.test_request_context():
+            with override_user(security_manager.find_user("admin")):
+                database, dataset, slice_, dashboard = self._build_graph()
+
+                cloned = CloneDashboardGraphCommand(dashboard, "v2").run()
+
+                assert cloned.id != dashboard.id
+                assert str(cloned.uuid) != str(dashboard.uuid)
+                assert cloned.dashboard_title == "Clone Source (v2)"
+                # the slug is dropped to avoid the active-slug uniqueness constraint
+                assert cloned.slug is None
+
+                cloned_slice = cloned.slices[0]
+                assert cloned_slice.id != slice_.id
+                assert str(cloned_slice.uuid) != str(slice_.uuid)
+
+                cloned_dataset = cloned_slice.table
+                assert cloned_dataset.id != dataset.id
+                assert str(cloned_dataset.uuid) != str(dataset.uuid)
+                # only the database connection is shared across versions
+                assert cloned_dataset.database_id == database.id
+                # the cloned dataset's SQL is preserved so it can diverge later
+                assert cloned_dataset.sql == "SELECT 1 AS a, 2 AS b"
+
+                # editing the clone must not mutate the source graph
+                cloned_dataset.sql = "SELECT 3 AS a"
+                db.session.commit()
+                db.session.refresh(dataset)
+                assert dataset.sql == "SELECT 1 AS a, 2 AS b"
+
+                db.session.delete(cloned)
+                db.session.delete(cloned_slice)
+                db.session.delete(cloned_dataset)
+                db.session.delete(dashboard)
+                db.session.delete(slice_)
+                db.session.delete(dataset)
+                db.session.delete(database)
+                db.session.commit()
+
+    def test_clone_dashboard_graph_command_invalid_label(self):
+        """A blank version label raises a DashboardInvalidError."""
+        with self.client.application.test_request_context():
+            with override_user(security_manager.find_user("admin")):
+                database, dataset, slice_, dashboard = self._build_graph()
+                with self.assertRaises(DashboardInvalidError):  # noqa: PT027
+                    CloneDashboardGraphCommand(dashboard, "  ").run()
+
+                db.session.delete(dashboard)
+                db.session.delete(slice_)
+                db.session.delete(dataset)
+                db.session.delete(database)
+                db.session.commit()
 
 
 class TestDeleteEmbeddedDashboardCommand(SupersetTestCase):

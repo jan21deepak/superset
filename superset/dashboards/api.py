@@ -48,6 +48,7 @@ from werkzeug.wsgi import FileWrapper
 
 from superset import db, is_feature_enabled
 from superset.charts.schemas import ChartEntityResponseSchema
+from superset.commands.dashboard.clone_graph import CloneDashboardGraphCommand
 from superset.commands.dashboard.copy import CopyDashboardCommand
 from superset.commands.dashboard.create import CreateDashboardCommand
 from superset.commands.dashboard.delete import (
@@ -57,6 +58,7 @@ from superset.commands.dashboard.delete import (
 from superset.commands.dashboard.exceptions import (
     DashboardAccessDeniedError,
     DashboardChartCustomizationsUpdateFailedError,
+    DashboardCloneError,
     DashboardColorsConfigUpdateFailedError,
     DashboardCopyError,
     DashboardCreateFailedError,
@@ -107,6 +109,7 @@ from superset.dashboards.schemas import (
     CacheScreenshotSchema,
     DashboardCacheScreenshotResponseSchema,
     DashboardChartCustomizationsConfigUpdateSchema,
+    DashboardCloneGraphSchema,
     DashboardColorsConfigUpdateSchema,
     DashboardCopySchema,
     DashboardDatasetSchema,
@@ -282,6 +285,7 @@ class DashboardRestApi(
         "delete_embedded",
         "thumbnail",
         "copy_dash",
+        "clone_graph",
         "cache_dashboard_screenshot",
         "screenshot",
         "put_filters",
@@ -515,6 +519,7 @@ class DashboardRestApi(
     openapi_spec_component_schemas = (
         ChartEntityResponseSchema,
         DashboardCacheScreenshotResponseSchema,
+        DashboardCloneGraphSchema,
         DashboardCopySchema,
         DashboardGetResponseSchema,
         DashboardDatasetSchema,
@@ -2591,6 +2596,89 @@ class DashboardRestApi(
                 "last_modified_time": dash.changed_on.replace(
                     microsecond=0
                 ).timestamp(),
+            },
+        )
+
+    @expose("/<id_or_slug>/clone_graph/", methods=("POST",))
+    @protect()
+    @safe
+    @permission_name("write")
+    @statsd_metrics
+    @event_logger.log_this_with_context(
+        action=lambda self, *args, **kwargs: f"{self.__class__.__name__}.clone_graph",
+        log_to_statsd=False,
+    )
+    @with_dashboard
+    def clone_graph(self, original_dash: Dashboard) -> Response:
+        """Clone a dashboard's full object graph as a new version.
+
+        Atomically clones the dashboard together with the charts and datasets
+        it depends on, assigning fresh UUIDs so the resulting graph is fully
+        isolated from the source. Only the database connection is shared. This
+        is the minimum viable primitive for serving different live versions of
+        a dashboard to different audiences (SIP-221 / issue #56).
+        ---
+        post:
+          summary: Clone a dashboard's full graph as a new version
+          parameters:
+          - in: path
+            schema:
+              type: string
+            name: id_or_slug
+            description: The dashboard id or slug
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/DashboardCloneGraphSchema'
+          responses:
+            200:
+              description: Id and UUID of the cloned dashboard
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      id:
+                        type: number
+                      uuid:
+                        type: string
+                      dashboard_title:
+                        type: string
+            400:
+              $ref: '#/components/responses/400'
+            401:
+              $ref: '#/components/responses/401'
+            403:
+              $ref: '#/components/responses/403'
+            404:
+              $ref: '#/components/responses/404'
+            500:
+              $ref: '#/components/responses/500'
+        """
+        try:
+            data = DashboardCloneGraphSchema().load(request.json)
+        except ValidationError as error:
+            return self.response_400(message=error.messages)
+
+        try:
+            new_dash = CloneDashboardGraphCommand(
+                original_dash, data["version_label"]
+            ).run()
+        except DashboardForbiddenError:
+            return self.response_403()
+        except DashboardInvalidError:
+            return self.response_400()
+        except DashboardCloneError:
+            return self.response_422()
+
+        return self.response(
+            200,
+            result={
+                "id": new_dash.id,
+                "uuid": str(new_dash.uuid),
+                "dashboard_title": new_dash.dashboard_title,
             },
         )
 

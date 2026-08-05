@@ -3638,6 +3638,63 @@ class TestDashboardApi(ApiEditorsTestCaseMixin, InsertChartMixin, SupersetTestCa
         db.session.delete(dash)
         db.session.commit()
 
+    @pytest.mark.usefixtures("load_world_bank_dashboard_with_slices")
+    def test_clone_dashboard_graph(self):
+        """
+        Cloning a dashboard graph produces a fully isolated parallel variant:
+        the dashboard, its charts and its datasets all receive fresh UUIDs
+        (so editing one version never mutates the source), while the database
+        connection is shared (SIP-221 / issue #56).
+        """
+        self.login(ADMIN_USERNAME)
+        original_dash = (
+            db.session.query(Dashboard).filter_by(slug="world_health").first()
+        )
+        original_slice_ids = {slc.id for slc in original_dash.slices}
+        original_dataset_ids = {
+            slc.datasource_id for slc in original_dash.slices if slc.datasource_id
+        }
+        original_database_ids = {
+            slc.table.database_id for slc in original_dash.slices if slc.table
+        }
+
+        uri = f"api/v1/dashboard/{original_dash.id}/clone_graph/"
+        rv = self.client.post(uri, json={"version_label": "v2"})
+        assert rv.status_code == 200
+        response = json.loads(rv.data.decode("utf-8"))
+        result = response["result"]
+
+        cloned = db.session.query(Dashboard).filter(Dashboard.id == result["id"]).one()
+        # the cloned dashboard is a distinct object with a labeled title/uuid
+        assert cloned.id != original_dash.id
+        assert str(cloned.uuid) == result["uuid"]
+        assert cloned.dashboard_title.endswith("(v2)")
+
+        # its charts are freshly cloned (no chart is shared with the source)
+        cloned_slice_ids = {slc.id for slc in cloned.slices}
+        assert cloned_slice_ids
+        assert cloned_slice_ids.isdisjoint(original_slice_ids)
+
+        # its datasets are freshly cloned, but reuse the same database
+        cloned_dataset_ids = {
+            slc.datasource_id for slc in cloned.slices if slc.datasource_id
+        }
+        cloned_database_ids = {
+            slc.table.database_id for slc in cloned.slices if slc.table
+        }
+        assert cloned_dataset_ids
+        assert cloned_dataset_ids.isdisjoint(original_dataset_ids)
+        assert cloned_database_ids == original_database_ids
+
+        # cleanup: charts, their cloned datasets and the cloned dashboard
+        cloned_tables = {slc.table for slc in cloned.slices if slc.table}
+        for slc in list(cloned.slices):
+            db.session.delete(slc)
+        for table in cloned_tables:
+            db.session.delete(table)
+        db.session.delete(cloned)
+        db.session.commit()
+
     @pytest.mark.usefixtures("create_dashboard_with_tag")
     def test_update_dashboard_add_tags_can_write_on_tag(self):
         """
