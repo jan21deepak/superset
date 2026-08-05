@@ -37,10 +37,7 @@ from superset.utils.file import get_filename, MAX_FILENAME_LENGTH, sanitize_titl
         ("Energy\x08Sankey", 132, False, "EnergySankey_132"),
         ("Energy\x08Sankey", 132, True, "EnergySankey"),
         ("Sales\x7fReport", 1, False, "SalesReport_1"),
-        ("a" * 250, 132, False, "a" * MAX_FILENAME_LENGTH + "_132"),
-        ("a" * 250, 132, True, "a" * MAX_FILENAME_LENGTH),
-        # truncation must not leave a trailing separator
-        ("a" * (MAX_FILENAME_LENGTH - 1) + " b", 132, False, "a" * 99 + "_132"),
+        ("a" * MAX_FILENAME_LENGTH, 132, True, "a" * MAX_FILENAME_LENGTH),
     ],
 )
 def test_get_filename(
@@ -48,6 +45,22 @@ def test_get_filename(
 ) -> None:
     original_filename = get_filename(model_name, model_id, skip_id)
     assert expected_filename == original_filename
+
+
+@pytest.mark.parametrize("skip_id", [False, True])
+def test_get_filename_truncates_long_names(skip_id: bool) -> None:
+    filename = get_filename("a" * 250, 132, skip_id)
+    suffix = "" if skip_id else "_132"
+    assert filename.startswith("a" * 91)
+    assert len(filename) == MAX_FILENAME_LENGTH + len(suffix)
+    assert filename.endswith(suffix)
+
+
+def test_get_filename_truncated_names_stay_unique() -> None:
+    prefix = "a" * 250
+    assert get_filename(prefix + "one", 1, skip_id=True) != get_filename(
+        prefix + "two", 2, skip_id=True
+    )
 
 
 @pytest.mark.parametrize(

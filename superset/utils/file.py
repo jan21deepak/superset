@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import hashlib
 import re
 
 from werkzeug.utils import secure_filename
@@ -29,6 +30,9 @@ _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 # characters, so long model names have to be truncated to stay extractable.
 MAX_FILENAME_LENGTH = 100
 
+# Length of the digest appended to truncated names to keep them unique.
+_DIGEST_LENGTH = 8
+
 
 def sanitize_title(title: str) -> str:
     """Remove all C0/C1 control characters from a title string."""
@@ -37,6 +41,12 @@ def sanitize_title(title: str) -> str:
 
 def get_filename(model_name: str, model_id: int, skip_id: bool = False) -> str:
     model_name = sanitize_title(model_name)
-    slug = secure_filename(model_name)[:MAX_FILENAME_LENGTH].strip("._")
+    slug = secure_filename(model_name)
+    if len(slug) > MAX_FILENAME_LENGTH:
+        # names sharing a prefix would collide once truncated, so tag them with a
+        # digest of the full name
+        digest = hashlib.md5(slug.encode(), usedforsecurity=False).hexdigest()
+        prefix = slug[: MAX_FILENAME_LENGTH - _DIGEST_LENGTH - 1].strip("._")
+        slug = f"{prefix}_{digest[:_DIGEST_LENGTH]}"
     filename = slug if skip_id else f"{slug}_{model_id}"
     return filename if slug else str(model_id)
