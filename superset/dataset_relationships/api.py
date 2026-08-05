@@ -63,9 +63,11 @@ from superset.extensions import event_logger
 from superset.models.dataset_relationship import DatasetRelationship
 from superset.views.base_api import (
     BaseSupersetModelRestApi,
+    RelatedFieldFilter,
     requires_json,
     statsd_metrics,
 )
+from superset.views.filters import BaseFilterRelatedUsers, FilterRelatedUsers
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +157,14 @@ class DatasetRelationshipRestApi(BaseSupersetModelRestApi):
     ]
     search_filters = {"name": [DatasetRelationshipAllTextFilter]}
     allowed_rel_fields = {"created_by", "changed_by"}
+    related_field_filters = {
+        "created_by": RelatedFieldFilter("first_name", FilterRelatedUsers),
+        "changed_by": RelatedFieldFilter("first_name", FilterRelatedUsers),
+    }
+    base_related_field_filters = {
+        "created_by": [["id", BaseFilterRelatedUsers, lambda: []]],
+        "changed_by": [["id", BaseFilterRelatedUsers, lambda: []]],
+    }
 
     openapi_spec_component_schemas = (DatasetRelationshipResponseSchema,)
     apispec_parameter_schemas = {

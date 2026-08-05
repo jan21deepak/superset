@@ -119,6 +119,31 @@ const fetchColumns = (datasetId: number): Promise<DatasetColumn[]> =>
       ),
   );
 
+const loadColumns = (
+  datasetId: number | undefined,
+  setColumns: (columns: DatasetColumn[]) => void,
+) => {
+  let stale = false;
+  if (datasetId) {
+    fetchColumns(datasetId)
+      .then(columns => {
+        if (!stale) {
+          setColumns(columns);
+        }
+      })
+      .catch(() => {
+        if (!stale) {
+          setColumns([]);
+        }
+      });
+  } else {
+    setColumns([]);
+  }
+  return () => {
+    stale = true;
+  };
+};
+
 export default function RelationshipModal({
   show,
   relationship,
@@ -165,21 +190,17 @@ export default function RelationshipModal({
     );
   }, [relationship, show]);
 
-  useEffect(() => {
-    if (sourceDatasetId) {
-      fetchColumns(sourceDatasetId).then(setSourceColumns);
-    } else {
-      setSourceColumns([]);
-    }
-  }, [sourceDatasetId]);
+  // a response that arrives after the dataset changed again is dropped, so the
+  // dropdown never offers columns of a dataset that isn't selected
+  useEffect(
+    () => loadColumns(sourceDatasetId, setSourceColumns),
+    [sourceDatasetId],
+  );
 
-  useEffect(() => {
-    if (targetDatasetId) {
-      fetchColumns(targetDatasetId).then(setTargetColumns);
-    } else {
-      setTargetColumns([]);
-    }
-  }, [targetDatasetId]);
+  useEffect(
+    () => loadColumns(targetDatasetId, setTargetColumns),
+    [targetDatasetId],
+  );
 
   const completePairs = useMemo(
     () =>
