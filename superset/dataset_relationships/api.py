@@ -69,6 +69,10 @@ from superset.views.base_api import (
 
 logger = logging.getLogger(__name__)
 
+# the canvas draws a graph, not a list: past this many relationships it is
+# unreadable anyway, and the payload isn't worth building
+MAX_GRAPH_RELATIONSHIPS = 1000
+
 
 class DatasetRelationshipRestApi(BaseSupersetModelRestApi):
     """
@@ -176,7 +180,7 @@ class DatasetRelationshipRestApi(BaseSupersetModelRestApi):
           description: >-
             Unlike the list endpoint, relationships are serialized with resolved
             dataset and column names and a validity flag, which is what the
-            relationship canvas draws.
+            relationship canvas draws, capped at 1000 relationships.
           responses:
             200:
               description: A list of dataset relationships
@@ -196,7 +200,9 @@ class DatasetRelationshipRestApi(BaseSupersetModelRestApi):
             500:
               $ref: '#/components/responses/500'
         """
-        result = get_visible_relationships(DatasetRelationshipDAO.find_all())
+        result = get_visible_relationships(
+            DatasetRelationshipDAO.find_accessible(MAX_GRAPH_RELATIONSHIPS)
+        )
         return self.response(200, count=len(result), result=result)
 
     @expose("/dataset/<int:pk>/", methods=("GET",))

@@ -21,14 +21,18 @@ from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload, selectinload
 
+from superset import security_manager
 from superset.connectors.sqla.models import SqlaTable, TableColumn
 from superset.daos.base import BaseDAO
 from superset.extensions import db
+from superset.models.core import Database
 from superset.models.dataset_relationship import (
     DatasetRelationship,
     DatasetRelationshipColumn,
 )
+from superset.utils.filters import get_dataset_access_filters
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +69,34 @@ class DatasetRelationshipDAO(BaseDAO[DatasetRelationship]):
             )
             .all()
         )
+
+    @staticmethod
+    def find_accessible(limit: int) -> list[DatasetRelationship]:
+        """
+        Relationships both of whose datasets the user can read, with the
+        datasets and columns the canvas renders eagerly loaded.
+        """
+        query = db.session.query(DatasetRelationship).options(
+            joinedload(DatasetRelationship.source_dataset),
+            joinedload(DatasetRelationship.target_dataset),
+            selectinload(DatasetRelationship.columns).joinedload(
+                DatasetRelationshipColumn.source_column
+            ),
+            selectinload(DatasetRelationship.columns).joinedload(
+                DatasetRelationshipColumn.target_column
+            ),
+        )
+        if not security_manager.can_access_all_datasources():
+            dataset_ids = (
+                db.session.query(SqlaTable.id)
+                .join(Database, Database.id == SqlaTable.database_id)
+                .filter(get_dataset_access_filters(SqlaTable))
+            )
+            query = query.filter(
+                DatasetRelationship.source_dataset_id.in_(dataset_ids),
+                DatasetRelationship.target_dataset_id.in_(dataset_ids),
+            )
+        return query.limit(limit).all()
 
     @staticmethod
     def find_datasets(dataset_ids: list[int]) -> dict[int, SqlaTable]:

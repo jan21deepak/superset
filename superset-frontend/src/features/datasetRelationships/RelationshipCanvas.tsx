@@ -72,13 +72,15 @@ export default function RelationshipCanvas({
     setNodes(graph.nodes);
   }, [graph, setNodes]);
 
+  // several relationships can connect the same two datasets, so the text of a
+  // warning isn't unique: it is keyed by the relationship it belongs to
   const warnings = useMemo(
     () =>
       relationships.flatMap(relationship =>
-        edgeWarnings(relationship).map(
-          warning =>
-            `${relationship.source_dataset_name} → ${relationship.target_dataset_name}: ${warning}`,
-        ),
+        edgeWarnings(relationship).map((warning, index) => ({
+          key: `${relationship.id}-${index}`,
+          text: `${relationship.source_dataset_name} → ${relationship.target_dataset_name}: ${warning}`,
+        })),
       ),
     [relationships],
   );
@@ -123,7 +125,7 @@ export default function RelationshipCanvas({
       {warnings.length > 0 && (
         <StyledWarnings data-test="dataset-relationship-warnings">
           {warnings.map(warning => (
-            <li key={warning}>{warning}</li>
+            <li key={warning.key}>{warning.text}</li>
           ))}
         </StyledWarnings>
       )}
