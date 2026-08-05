@@ -16,9 +16,11 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { render, screen, cleanup } from 'spec/helpers/testing-library';
+import { render, screen, cleanup, act } from 'spec/helpers/testing-library';
 import type { editors } from '@apache-superset/core';
+import { forwardRef } from 'react';
 import EditorHost from './EditorHost';
+import EditorProviders from './EditorProviders';
 
 // Mock the AceEditorProvider to avoid loading the full Ace editor in tests
 jest.mock('./AceEditorProvider', () => ({
@@ -30,18 +32,6 @@ jest.mock('./AceEditorProvider', () => ({
       <span data-test="ace-editor-language">{language}</span>
     </div>
   ),
-}));
-
-// Mock the EditorProviders - return undefined (no extension provider)
-jest.mock('./EditorProviders', () => ({
-  __esModule: true,
-  default: {
-    getInstance: () => ({
-      getProvider: jest.fn().mockReturnValue(undefined),
-      hasProvider: jest.fn().mockReturnValue(false),
-      subscribe: jest.fn().mockReturnValue(() => {}),
-    }),
-  },
 }));
 
 afterEach(() => {
@@ -84,4 +74,23 @@ test('passes language option to the editor', () => {
   render(<EditorHost {...defaultProps} language="json" />);
 
   expect(screen.getByTestId('ace-editor-language')).toHaveTextContent('json');
+});
+
+test('renders the extension editor and falls back to the built-in on disposal', () => {
+  const ExtensionEditor = forwardRef(() => (
+    <div data-test="extension-editor" />
+  )) as editors.EditorComponent;
+
+  const disposable = EditorProviders.getInstance().registerProvider(
+    { id: 'acme.monaco', name: 'Monaco', languages: ['sql'] },
+    ExtensionEditor,
+  );
+
+  const { rerender } = render(<EditorHost {...defaultProps} />);
+  expect(screen.getByTestId('extension-editor')).toBeInTheDocument();
+
+  act(() => disposable.dispose());
+  rerender(<EditorHost {...defaultProps} />);
+
+  expect(screen.getByTestId('ace-editor-provider')).toBeInTheDocument();
 });

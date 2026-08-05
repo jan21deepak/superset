@@ -49,6 +49,70 @@ beforeEach(() => {
   manager.reset();
 });
 
+test('resolves the built-in default when no extension is registered', () => {
+  const manager = EditorProviders.getInstance();
+  const builtIn = createMockEditor({
+    id: 'superset.ace-editor',
+    languages: ['sql', 'json'],
+  });
+  const component = createMockEditorComponent();
+
+  manager.setDefaultProvider(builtIn, component);
+
+  expect(manager.getProvider('sql')?.editor).toBe(builtIn);
+  expect(manager.getDefaultProvider('sql')?.editor).toBe(builtIn);
+  expect(manager.getOverrideProvider('sql')).toBeUndefined();
+  expect(manager.hasProvider('json')).toBe(true);
+  expect(manager.hasOverride('json')).toBe(false);
+});
+
+test('an extension provider overrides the built-in default', () => {
+  const manager = EditorProviders.getInstance();
+  const builtIn = createMockEditor({ id: 'superset.ace-editor' });
+  const extension = createMockEditor({ id: 'acme.monaco' });
+
+  manager.setDefaultProvider(builtIn, createMockEditorComponent());
+  const disposable = manager.registerProvider(
+    extension,
+    createMockEditorComponent(),
+  );
+
+  expect(manager.getProvider('sql')?.editor).toBe(extension);
+  expect(manager.getOverrideProvider('sql')?.editor).toBe(extension);
+  expect(manager.getDefaultProvider('sql')?.editor).toBe(builtIn);
+
+  disposable.dispose();
+
+  expect(manager.getProvider('sql')?.editor).toBe(builtIn);
+  expect(manager.getOverrideProvider('sql')).toBeUndefined();
+});
+
+test('setting the default is idempotent by id', () => {
+  const manager = EditorProviders.getInstance();
+  const builtIn = createMockEditor({ id: 'superset.ace-editor' });
+
+  manager.setDefaultProvider(builtIn, createMockEditorComponent());
+  manager.setDefaultProvider(builtIn, createMockEditorComponent());
+
+  expect(manager.getAllProviders()).toHaveLength(1);
+});
+
+test('a user selection decides which editor is active', () => {
+  const manager = EditorProviders.getInstance();
+  const builtIn = createMockEditor({ id: 'superset.ace-editor' });
+  const extension = createMockEditor({ id: 'acme.monaco' });
+
+  manager.setDefaultProvider(builtIn, createMockEditorComponent());
+  manager.registerProvider(extension, createMockEditorComponent());
+
+  expect(manager.getProvidersForLanguage('sql')).toHaveLength(2);
+
+  manager.setSelectedProvider('sql', 'superset.ace-editor');
+
+  expect(manager.getSelectedProvider('sql')).toBe('superset.ace-editor');
+  expect(manager.getProvider('sql')?.editor).toBe(builtIn);
+});
+
 test('creates singleton instance', () => {
   const manager1 = EditorProviders.getInstance();
   const manager2 = EditorProviders.getInstance();

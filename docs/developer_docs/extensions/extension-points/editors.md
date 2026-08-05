@@ -43,6 +43,17 @@ Superset uses text editors in various places throughout the application:
 
 By registering an editor for a language, your extension replaces the default Ace editor in **all** locations that use that language.
 
+## Default and Override Tiers
+
+The built-in Ace editor is not a hardcoded fallback in the host: it registers through this same contribution point, under the reserved id `superset.ace-editor`, as the *default* provider for every language. Extensions register in the *override* tier, and the registry resolves the active provider as `override ?? default`.
+
+Two consequences are worth knowing:
+
+- **Introspection is truthful.** `editors.getEditor(language)` returns whichever editor actually renders, so it returns the built-in editor when no extension has registered one. To detect whether an extension has taken over, use `editors.getOverrideEditor(language)` instead of comparing `getEditor()` to `undefined`.
+- **The built-in is reachable.** `editors.getDefaultEditor(language)` returns the built-in provider, so an extension can wrap it — adding a toolbar or other chrome — rather than only replacing it.
+
+Disposing your registration restores the built-in editor through the registry. The default tier is registered statically wherever editors render, independently of the `ENABLE_EXTENSIONS` feature flag and the extension loader, so a core surface always has an editor.
+
 ## Implementing an Editor
 
 Your editor component must implement the `EditorProps` interface and expose an `EditorHandle` via `forwardRef`. For the complete interface definitions, see `@apache-superset/core/api/editors.ts`.

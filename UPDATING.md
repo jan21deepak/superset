@@ -24,6 +24,17 @@ assists people when migrating to a new version.
 
 ## Next
 
+### `editors.getEditor()` returns the built-in editor instead of `undefined`
+
+The built-in Ace editor registers through the `editors` contribution point as
+the default provider (id `superset.ace-editor`) rather than being a hardcoded
+fallback in the host, so `editors.getEditor(language)` now returns whichever
+editor actually renders. An extension that used `getEditor(language) ===
+undefined` as a "no custom editor is registered" check should use the new
+`editors.getOverrideEditor(language)` instead. `editors.getDefaultEditor(language)`
+returns the built-in provider, so an extension can wrap it rather than only
+replacing it, and `getAllEditors()` includes built-in providers.
+
 ### Principal listing APIs now honour related-field filters
 
 Two authorization-related listing behaviors changed for API clients. Neither
