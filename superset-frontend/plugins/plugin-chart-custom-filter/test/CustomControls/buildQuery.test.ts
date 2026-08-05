@@ -25,17 +25,17 @@ const baseFormData: CustomControlsFormData = {
   viz_type: VizType.CustomControls,
 };
 
-test('groups by the configured filter column', () => {
+test('selects the configured filter column', () => {
   const { queries } = buildQuery({
     ...baseFormData,
     filterColumn: 'country',
   });
-  expect(queries[0].groupby).toEqual(['country']);
+  expect(queries[0].columns).toEqual(['country']);
   expect(queries[0].metrics).toEqual([]);
   expect(queries[0].row_limit).toBe(1000);
 });
 
-test('emits no groupby when no filter column is set', () => {
+test('emits no columns when no filter column is set', () => {
   const { queries } = buildQuery(baseFormData);
-  expect(queries[0].groupby).toEqual([]);
+  expect(queries[0].columns).toEqual([]);
 });

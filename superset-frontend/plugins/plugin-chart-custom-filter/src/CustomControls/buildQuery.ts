@@ -23,11 +23,11 @@ export default function buildQuery(formData: CustomControlsFormData) {
   const { filterColumn } = formData;
 
   // Cap the option list with row_limit: series_limit is ignored for a
-  // non-timeseries, metric-less groupby, so it would not bound the result.
+  // non-timeseries, metric-less grouping, so it would not bound the result.
   return buildQueryContext(formData, baseQueryObject => [
     {
       ...baseQueryObject,
-      groupby: filterColumn ? [filterColumn] : [],
+      columns: filterColumn ? [filterColumn] : [],
       metrics: [],
       row_limit: 1000,
     },

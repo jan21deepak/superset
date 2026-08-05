@@ -26,9 +26,9 @@ const formData: CustomDateFilterFormData = {
   filterColumn: 'order_date',
 };
 
-test('builds a minimal query that groups by the filter column', () => {
+test('builds a minimal query that selects the filter column', () => {
   const { queries } = buildQuery(formData);
-  expect(queries[0].groupby).toEqual(['order_date']);
+  expect(queries[0].columns).toEqual(['order_date']);
   expect(queries[0].metrics).toEqual([]);
   expect(queries[0].row_limit).toBe(1);
 });
