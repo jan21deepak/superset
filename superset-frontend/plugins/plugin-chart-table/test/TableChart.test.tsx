@@ -2581,6 +2581,53 @@ describe('plugin-chart-table', () => {
     expect(screen.queryByText('Search by')).toBeInTheDocument();
   });
 
+  test('keeps the configured server page size available when it exceeds the row count (#42243)', () => {
+    // 12 total rows with a configured Server Page Length of 20: the selector
+    // must show 20 (not a bogus 0) and keep the larger page sizes selectable.
+    const rowCount = 12;
+    const props = transformProps({
+      ...testData.raw,
+      rawFormData: {
+        ...testData.raw.rawFormData,
+        server_pagination: true,
+        server_page_length: 20,
+      },
+      queriesData: [
+        {
+          ...testData.raw.queriesData[0],
+          colnames: ['num'],
+          coltypes: [GenericDataType.Numeric],
+          data: Array.from({ length: rowCount }, (_, i) => ({ num: i })),
+        },
+        {
+          ...testData.raw.queriesData[0],
+          data: [{ rowcount: rowCount }],
+        },
+      ],
+    });
+    const { container } = render(
+      ProviderWrapper({
+        children: <TableChart {...props} sticky={false} />,
+      }),
+    );
+
+    // The selector reflects the configured page size (20), not a bogus 0.
+    const selectedSize = container.querySelector(
+      '.dt-select-page-size .ant-select-content',
+    );
+    expect(selectedSize).toHaveTextContent('20');
+
+    // Opening the dropdown exposes every configured page size and never 0.
+    fireEvent.mouseDown(
+      container.querySelector('.dt-select-page-size .ant-select')!,
+    );
+    const optionValues = screen
+      .getAllByRole('option')
+      .map(option => option.textContent);
+    expect(optionValues).not.toContain('0');
+    expect(optionValues).toContain('20');
+  });
+
   test(
     'should read the totals row from the correct query when percent metrics ' +
       'use the "all records" calculation mode',
