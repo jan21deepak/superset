@@ -218,7 +218,11 @@ export default function CustomControls(props: CustomControlsTransformedProps) {
       return (
         <Input
           placeholder={t('Filter by %s', columnLabel || t('value'))}
-          value={typeof localValue === 'string' ? localValue : undefined}
+          value={
+            typeof localValue === 'string' || typeof localValue === 'number'
+              ? String(localValue)
+              : ''
+          }
           onChange={event => handleTextChange(event.target.value)}
           allowClear
         />
