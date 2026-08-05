@@ -28,6 +28,7 @@ from typing import Any, Callable
 import click
 import semver
 from jinja2 import Environment, FileSystemLoader
+from pydantic import ValidationError
 from superset_core.extensions.types import (
     ExtensionConfig,
     Manifest,
@@ -169,16 +170,35 @@ def build_manifest(cwd: Path, remote_entry: str | None) -> Manifest:
         entrypoint = f"{publisher_snake}.{name_snake}.entrypoint"
         backend = ManifestBackend(entrypoint=entrypoint)
 
-    return Manifest(
-        publisher=extension.publisher,
-        name=extension.name,
-        displayName=extension.displayName,
-        version=extension.version,
-        permissions=extension.permissions,
-        dependencies=extension.dependencies,
-        frontend=frontend,
-        backend=backend,
-    )
+    try:
+        return Manifest(
+            publisher=extension.publisher,
+            name=extension.name,
+            displayName=extension.displayName,
+            version=extension.version,
+            permissions=extension.permissions,
+            dependencies=extension.dependencies,
+            frontend=frontend,
+            backend=backend,
+        )
+    except ValidationError as exc:
+        # A "id: Field required" error here almost always means the installed
+        # ``apache-superset-core`` predates the change that made ``Manifest.id``
+        # a computed field, i.e. the CLI and core are out of step.
+        if "id" in Manifest.model_fields:
+            click.secho(
+                "❌ Failed to build the manifest: the installed "
+                "apache-superset-core is out of date and still requires 'id' as "
+                "an input field.\n"
+                "   Upgrade it to a version compatible with this CLI "
+                "(apache-superset-core>=0.2.0), for example:\n"
+                "     pip install --upgrade 'apache-superset-core>=0.2.0'",
+                err=True,
+                fg="red",
+            )
+            sys.exit(1)
+        click.secho(f"❌ Failed to build the manifest:\n{exc}", err=True, fg="red")
+        sys.exit(1)
 
 
 def write_manifest(cwd: Path, manifest: Manifest) -> None:

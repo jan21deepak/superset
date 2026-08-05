@@ -42,8 +42,11 @@ classifiers = [
     "Topic :: System :: Software Distribution",
 ]
 dependencies = [
-    # no bounds for apache-superset-core until we have a stable version
-    "apache-superset-core",
+    # Lower bound guards against a stale ``apache-superset-core`` on PyPI: the CLI
+    # relies on ``Manifest.id`` being a computed field (added in 0.2.0), and an
+    # older core still requires ``id`` as input, which fails at bundle time. The
+    # bound makes such a skew fail at resolution rather than at runtime.
+    "apache-superset-core>=0.2.0",
     "click>=8.0.3",
     "jinja2>=3.1.6",
     "semver>=3.0.4",
