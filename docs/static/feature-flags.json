@@ -34,6 +34,12 @@
         "description": "Allow metrics and columns to be grouped into folders in the chart builder"
       },
       {
+        "name": "DATASET_RELATIONSHIPS",
+        "default": false,
+        "lifecycle": "development",
+        "description": "Enable declaring relationships between datasets (SIP-217). Relationships are descriptive metadata: they don't affect query generation."
+      },
+      {
         "name": "DATE_RANGE_TIMESHIFTS_ENABLED",
         "default": false,
         "lifecycle": "development",
