@@ -198,6 +198,35 @@ def test_resample_zero_fill_upsamples_full_period():
     )
 
 
+def test_resample_zero_fill_with_tz_aware_index():
+    # tz-aware indexes (e.g. timestamptz columns) must not raise when the
+    # tz-naive query boundaries are used to extend the target period.
+    df = pd.DataFrame(
+        index=to_datetime(["2026-07-01 12:00:00"]).tz_localize("UTC"),
+        data={"y": [5.0]},
+    )
+    post_df = pp.resample(
+        df=df,
+        rule="1H",
+        method="asfreq",
+        fill_value=0,
+        time_range=(
+            to_datetime("2026-07-01 00:00:00"),
+            to_datetime("2026-07-02 00:00:00"),
+        ),
+    )
+    expected_index = pd.date_range(
+        start="2026-07-01 00:00:00", periods=24, freq="1H", tz="UTC"
+    )
+    assert post_df.index.tz is not None
+    assert post_df.equals(
+        pd.DataFrame(
+            index=expected_index,
+            data={"y": [0.0 if hour != 12 else 5.0 for hour in range(24)]},
+        )
+    )
+
+
 def test_resample_with_empty_time_range_matches_default():
     post_df = pp.resample(
         df=timeseries_df,

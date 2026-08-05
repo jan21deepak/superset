@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from datetime import datetime
+from datetime import datetime, tzinfo
 from typing import Optional, Union
 
 import pandas as pd
@@ -59,9 +59,14 @@ def resample(
     if start is not None or end is not None:
         # Extend the index with the target boundaries so that resampling (and
         # therefore gap filling) covers the entire target period rather than
-        # only the interval between the first and last data points.
+        # only the interval between the first and last data points. The
+        # boundaries are aligned to the index timezone so tz-aware indexes
+        # (e.g. ``timestamptz`` columns) don't produce an object-dtype index.
+        tz = df.index.tz
+        start = _align_tz(start, tz)
+        end = _align_tz(end, tz)
         boundaries = pd.DatetimeIndex(
-            [pd.Timestamp(value) for value in (start, end) if value is not None]
+            [value for value in (start, end) if value is not None]
         )
         df = df.reindex(df.index.union(boundaries))
 
@@ -78,6 +83,26 @@ def resample(
     if end is not None:
         # ``end`` is exclusive, so drop any bin generated at or beyond it
         # (e.g. the boundary added above to extend the target period).
-        _df = _df[_df.index < pd.Timestamp(end)]
+        _df = _df[_df.index < _align_tz(end, _df.index.tz)]
 
     return _df
+
+
+def _align_tz(
+    value: Optional[datetime], tz: Optional[tzinfo]
+) -> Optional[pd.Timestamp]:
+    """
+    Align a boundary timestamp with the timezone of the resampled index.
+
+    Boundaries derived from the query time range are timezone-naive, while the
+    DataFrame index may be timezone-aware (or vice versa). Mixing the two would
+    yield an object-dtype index and raise when resampling/comparing.
+    """
+    if value is None:
+        return None
+    ts = pd.Timestamp(value)
+    if tz is not None:
+        ts = ts.tz_localize(tz) if ts.tzinfo is None else ts.tz_convert(tz)
+    elif ts.tzinfo is not None:
+        ts = ts.tz_localize(None)
+    return ts

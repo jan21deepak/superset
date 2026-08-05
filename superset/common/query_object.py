@@ -539,9 +539,17 @@ class QueryObject:  # pylint: disable=too-many-instance-attributes
                 if operation == "resample" and "time_range" not in options:
                     # Apply gap filling to the entire target period (from the
                     # query time filter) rather than only between data points.
-                    options = {
-                        **options,
-                        "time_range": (self.from_dttm, self.to_dttm),
-                    }
+                    # ``from_dttm``/``to_dttm`` are expressed in the raw database
+                    # time frame, but the dataframe index is shifted forward by a
+                    # dataset hours offset and/or the query time shift during
+                    # normalization. Only inject the boundaries when no such shift
+                    # applies, so gap filling never drops legitimately returned
+                    # data because of a frame mismatch.
+                    datasource_offset = self.datasource.offset if self.datasource else 0
+                    if not datasource_offset and self.time_shift is None:
+                        options = {
+                            **options,
+                            "time_range": (self.from_dttm, self.to_dttm),
+                        }
                 df = getattr(pandas_postprocessing, operation)(df, **options)
             return df

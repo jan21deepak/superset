@@ -14,8 +14,10 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from unittest.mock import call, patch
+from datetime import datetime
+from unittest.mock import call, MagicMock, patch
 
+import pandas as pd
 from flask_appbuilder.security.sqla.models import User
 
 from superset.common.query_object import QueryObject
@@ -371,3 +373,64 @@ def test_cache_key_cache_impersonation_on_with_different_user_and_db_impersonati
         ],
         any_order=True,
     )
+
+
+def _resample_query_object(**kwargs) -> QueryObject:
+    return QueryObject(
+        row_limit=1,
+        from_dttm=datetime(2019, 1, 1),
+        to_dttm=datetime(2019, 1, 8),
+        post_processing=[
+            {"operation": "resample", "options": {"rule": "1D", "method": "asfreq"}}
+        ],
+        **kwargs,
+    )
+
+
+@patch("superset.common.query_object.pandas_postprocessing.resample")
+def test_exec_post_processing_resample_injects_time_range(resample_mock):
+    """
+    The query time range is injected so gap filling spans the whole period.
+    """
+    df = pd.DataFrame(index=pd.to_datetime(["2019-01-01"]), data={"y": [1.0]})
+    resample_mock.return_value = df
+    query_object = _resample_query_object()
+
+    query_object.exec_post_processing(df)
+
+    _, options = resample_mock.call_args
+    assert options["time_range"] == (datetime(2019, 1, 1), datetime(2019, 1, 8))
+
+
+@patch("superset.common.query_object.pandas_postprocessing.resample")
+def test_exec_post_processing_resample_skips_time_range_with_time_shift(resample_mock):
+    """
+    With a time shift the dataframe index is in a different frame, so the
+    boundaries are not injected to avoid dropping shifted data.
+    """
+    df = pd.DataFrame(index=pd.to_datetime(["2019-01-01"]), data={"y": [1.0]})
+    resample_mock.return_value = df
+    query_object = _resample_query_object(time_shift="1 week ago")
+
+    query_object.exec_post_processing(df)
+
+    _, options = resample_mock.call_args
+    assert "time_range" not in options
+
+
+@patch("superset.common.query_object.pandas_postprocessing.resample")
+def test_exec_post_processing_resample_skips_time_range_with_offset(resample_mock):
+    """
+    A dataset hours offset shifts the dataframe index, so the boundaries are
+    not injected to avoid dropping offset data.
+    """
+    df = pd.DataFrame(index=pd.to_datetime(["2019-01-01"]), data={"y": [1.0]})
+    resample_mock.return_value = df
+    datasource = MagicMock()
+    datasource.offset = 5
+    query_object = _resample_query_object(datasource=datasource)
+
+    query_object.exec_post_processing(df)
+
+    _, options = resample_mock.call_args
+    assert "time_range" not in options
