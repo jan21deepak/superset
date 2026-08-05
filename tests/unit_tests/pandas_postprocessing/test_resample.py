@@ -138,6 +138,78 @@ def test_resample_zero_fill_with_gaps():
     )
 
 
+def test_resample_zero_fill_with_time_range():
+    # gap filling should cover the entire target period, not only the span
+    # between the first and last data points. ``end`` is exclusive.
+    post_df = pp.resample(
+        df=timeseries_df,
+        rule="1D",
+        method="asfreq",
+        fill_value=0,
+        time_range=(to_datetime("2018-12-30"), to_datetime("2019-01-09")),
+    )
+    assert post_df.equals(
+        pd.DataFrame(
+            index=pd.to_datetime(
+                [
+                    "2018-12-30",
+                    "2018-12-31",
+                    "2019-01-01",
+                    "2019-01-02",
+                    "2019-01-03",
+                    "2019-01-04",
+                    "2019-01-05",
+                    "2019-01-06",
+                    "2019-01-07",
+                    "2019-01-08",
+                ]
+            ),
+            data={
+                "label": [0, 0, "x", "y", 0, 0, "z", 0, "q", 0],
+                "y": [0, 0, 1.0, 2.0, 0, 0, 3.0, 0, 4.0, 0],
+            },
+        )
+    )
+
+
+def test_resample_zero_fill_upsamples_full_period():
+    # single daily data point upsampled to hourly across the whole day
+    df = pd.DataFrame(
+        index=to_datetime(["2026-07-01 12:00:00"]),
+        data={"y": [5.0]},
+    )
+    post_df = pp.resample(
+        df=df,
+        rule="1H",
+        method="asfreq",
+        fill_value=0,
+        time_range=(
+            to_datetime("2026-07-01 00:00:00"),
+            to_datetime("2026-07-02 00:00:00"),
+        ),
+    )
+    assert post_df.equals(
+        pd.DataFrame(
+            index=pd.date_range(start="2026-07-01 00:00:00", periods=24, freq="1H"),
+            data={
+                "y": [0.0 if hour != 12 else 5.0 for hour in range(24)],
+            },
+        )
+    )
+
+
+def test_resample_with_empty_time_range_matches_default():
+    post_df = pp.resample(
+        df=timeseries_df,
+        rule="1D",
+        method="asfreq",
+        fill_value=0,
+        time_range=(None, None),
+    )
+    default_df = pp.resample(df=timeseries_df, rule="1D", method="asfreq", fill_value=0)
+    assert post_df.equals(default_df)
+
+
 def test_resample_after_pivot():
     df = pd.DataFrame(
         data={
