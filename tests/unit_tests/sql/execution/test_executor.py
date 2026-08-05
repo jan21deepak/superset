@@ -2117,6 +2117,45 @@ def test_check_disallowed_functions_no_config(
     assert result is None
 
 
+@pytest.mark.parametrize(
+    "sql,expected",
+    [
+        (
+            "SELECT event_date, SUM(metric_user_count) AS total_users "
+            "FROM some_metrics_table GROUP BY event_date",
+            None,
+        ),
+        (
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'example_schema'",
+            None,
+        ),
+        ("SELECT USER()", {"user"}),
+        ("SELECT metric_user_count, USER() FROM some_metrics_table", {"user"}),
+    ],
+)
+def test_check_disallowed_functions_ast_based(
+    mocker: MockerFixture,
+    database: Database,
+    app_context: None,
+    sql: str,
+    expected: set[str] | None,
+) -> None:
+    """Only real function calls are flagged, not identifiers."""
+    from superset.sql.execution.executor import SQLExecutor
+    from superset.sql.parse import SQLScript
+
+    mocker.patch.dict(
+        current_app.config,
+        {"DISALLOWED_SQL_FUNCTIONS": {"sqlite": {"user", "schema"}}},
+    )
+
+    executor = SQLExecutor(database)
+    script = SQLScript(sql, engine=database.db_engine_spec.engine)
+
+    assert executor._check_disallowed_functions(script) == expected
+
+
 def test_try_get_cached_result_with_mutation(
     mocker: MockerFixture, database: Database, app_context: None
 ) -> None:
