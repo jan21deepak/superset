@@ -34,7 +34,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, relationship
+from sqlalchemy.orm import backref, Mapped, relationship
 
 from superset.models.helpers import AuditMixinNullable, UUIDMixin
 from superset.utils.backports import StrEnum
@@ -94,15 +94,25 @@ class DatasetRelationship(Model, AuditMixinNullable, UUIDMixin):
     is_cross_database = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
 
+    # the backrefs defer to the database cascade: without passive_deletes the ORM
+    # would try to null out the non-nullable FKs when a dataset is deleted
     source_dataset: Mapped[SqlaTable] = relationship(
         "SqlaTable",
         foreign_keys=[source_dataset_id],
-        backref="outgoing_relationships",
+        backref=backref(
+            "outgoing_relationships",
+            cascade="all, delete-orphan",
+            passive_deletes=True,
+        ),
     )
     target_dataset: Mapped[SqlaTable] = relationship(
         "SqlaTable",
         foreign_keys=[target_dataset_id],
-        backref="incoming_relationships",
+        backref=backref(
+            "incoming_relationships",
+            cascade="all, delete-orphan",
+            passive_deletes=True,
+        ),
     )
     columns: Mapped[list[DatasetRelationshipColumn]] = relationship(
         "DatasetRelationshipColumn",

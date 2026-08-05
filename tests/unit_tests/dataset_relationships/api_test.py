@@ -155,3 +155,22 @@ def test_dataset_detail_includes_relationships(
     relationships = response.json["result"]["relationships"]
     assert len(relationships) == 1
     assert relationships[0]["target_dataset_name"] == "customers"
+
+
+def test_graph_serializes_names_and_validity(
+    datasets: Session, client: Any, full_api_access: None
+) -> None:
+    """
+    The canvas needs the resolved names and the validity flag, which the FAB
+    list endpoint doesn't carry.
+    """
+    ids = _ids(datasets)
+    _post(client, ids)
+
+    response = client.get("/api/v1/dataset_relationship/graph/")
+    assert response.status_code == 200
+    assert response.json["count"] == 1
+    relationship = response.json["result"][0]
+    assert relationship["source_dataset_name"] == "orders"
+    assert relationship["target_dataset_name"] == "customers"
+    assert relationship["is_valid"] is True

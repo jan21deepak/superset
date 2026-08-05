@@ -56,6 +56,7 @@ from superset.dataset_relationships.schemas import (
 from superset.dataset_relationships.utils import (
     dataset_relationship_to_dict,
     get_visible_dataset_relationships,
+    get_visible_relationships,
 )
 from superset.exceptions import SupersetSecurityException
 from superset.extensions import event_logger
@@ -83,11 +84,13 @@ class DatasetRelationshipRestApi(BaseSupersetModelRestApi):
         RouteMethod.RELATED,
         "bulk_delete",
         "get_by_dataset",
+        "get_graph",
     }
     class_permission_name = "Dataset"
     method_permission_name = {
         **MODEL_API_RW_METHOD_PERMISSION_MAP,
         "get_by_dataset": "read",
+        "get_graph": "read",
     }
 
     resource_name = "dataset_relationship"
@@ -155,6 +158,46 @@ class DatasetRelationshipRestApi(BaseSupersetModelRestApi):
     }
     openapi_spec_tag = "Dataset Relationships"
     openapi_spec_methods = openapi_spec_methods_override
+
+    @expose("/graph/", methods=("GET",))
+    @protect()
+    @safe
+    @statsd_metrics
+    @permission_name("get")
+    @event_logger.log_this_with_context(
+        action=lambda self, *args, **kwargs: f"{self.__class__.__name__}.get_graph",
+        log_to_statsd=False,
+    )
+    def get_graph(self) -> Response:
+        """Get every visible relationship, in the shape the canvas renders.
+        ---
+        get:
+          summary: Get every relationship the user can see
+          description: >-
+            Unlike the list endpoint, relationships are serialized with resolved
+            dataset and column names and a validity flag, which is what the
+            relationship canvas draws.
+          responses:
+            200:
+              description: A list of dataset relationships
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      count:
+                        type: number
+                      result:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DatasetRelationshipResponseSchema'
+            401:
+              $ref: '#/components/responses/401'
+            500:
+              $ref: '#/components/responses/500'
+        """
+        result = get_visible_relationships(DatasetRelationshipDAO.find_all())
+        return self.response(200, count=len(result), result=result)
 
     @expose("/dataset/<int:pk>/", methods=("GET",))
     @protect()

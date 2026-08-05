@@ -18,7 +18,6 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import rison from 'rison';
 import { SupersetClient, getClientErrorObject } from '@superset-ui/core';
 import { t } from '@apache-superset/core/translation';
 import { css, styled } from '@apache-superset/core/theme';
@@ -54,9 +53,8 @@ function DatasetRelationships({
 
   const fetchRelationships = useCallback(() => {
     setLoading(true);
-    const query = rison.encode({ page: 0, page_size: 100 });
     return SupersetClient.get({
-      endpoint: `/api/v1/dataset_relationship/?q=${query}`,
+      endpoint: '/api/v1/dataset_relationship/graph/',
     })
       .then(response => setRelationships(response.json.result))
       .catch(response =>

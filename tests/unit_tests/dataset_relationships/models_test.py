@@ -106,3 +106,21 @@ def test_column_mapping_uniqueness(datasets: Session) -> None:
         pairs,
         relationship_id=relationship.id,
     )
+
+
+def test_deleting_a_dataset_leaves_its_relationships_to_the_database(
+    datasets: Session,
+) -> None:
+    """
+    Deleting a dataset defers to the database cascade; without that the ORM
+    would try to null out the non-nullable dataset FKs and fail.
+    """
+    _relationship(datasets)
+    orders = datasets.query(SqlaTable).filter_by(table_name="orders").one()
+
+    datasets.delete(orders)
+    datasets.flush()
+
+    # the relationship rows are left for the database's ON DELETE CASCADE, and
+    # crucially the delete itself is not rejected
+    assert datasets.query(SqlaTable).filter_by(table_name="orders").count() == 0

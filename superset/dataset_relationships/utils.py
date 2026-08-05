@@ -39,15 +39,24 @@ def is_relationship_visible(relationship: DatasetRelationship) -> bool:
     return True
 
 
+def get_visible_relationships(
+    relationships: list[DatasetRelationship],
+) -> list[dict[str, Any]]:
+    """
+    Serialize the relationships the current user is allowed to see.
+    """
+    return [
+        dataset_relationship_to_dict(relationship)
+        for relationship in relationships
+        if is_relationship_visible(relationship)
+    ]
+
+
 def get_visible_dataset_relationships(dataset_id: int) -> list[dict[str, Any]]:
     """
     The relationships of a dataset the current user is allowed to see.
     """
-    return [
-        dataset_relationship_to_dict(relationship)
-        for relationship in DatasetRelationshipDAO.find_by_dataset(dataset_id)
-        if is_relationship_visible(relationship)
-    ]
+    return get_visible_relationships(DatasetRelationshipDAO.find_by_dataset(dataset_id))
 
 
 def dataset_relationship_to_dict(relationship: DatasetRelationship) -> dict[str, Any]:
