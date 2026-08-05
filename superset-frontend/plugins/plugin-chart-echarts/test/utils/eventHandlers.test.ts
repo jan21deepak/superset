@@ -165,6 +165,36 @@ test('cross-filter deselects previously selected value', () => {
   );
 });
 
+test('cross-filter does nothing when clicked name is missing from labelMap (pie "Other" slice)', () => {
+  const setDataMask = jest.fn();
+  const props = buildProps({
+    groupby: ['topics'],
+    labelMap: { cancellations: ['cancellations'] },
+    selectedValues: {},
+    setDataMask,
+  });
+
+  const handlers = allEventHandlers(props);
+  handlers.click({ name: 'Other' });
+
+  expect(setDataMask).not.toHaveBeenCalled();
+});
+
+test('cross-filter does nothing when clicked name is empty (pie "Total" text)', () => {
+  const setDataMask = jest.fn();
+  const props = buildProps({
+    groupby: ['topics'],
+    labelMap: { cancellations: ['cancellations'] },
+    selectedValues: {},
+    setDataMask,
+  });
+
+  const handlers = allEventHandlers(props);
+  handlers.click({ name: '' });
+
+  expect(setDataMask).not.toHaveBeenCalled();
+});
+
 test('cross-filter does nothing when emitCrossFilters is false', () => {
   const setDataMask = jest.fn();
   const props = buildProps({
