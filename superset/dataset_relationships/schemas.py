@@ -63,7 +63,12 @@ is_active_description = "Whether the relationship is active"
 class DatasetRelationshipColumnSchema(Schema):
     source_column_id = fields.Integer(required=True)
     target_column_id = fields.Integer(required=True)
-    ordinal = fields.Integer(required=False, load_default=None)
+    # the stored ordinal follows the position of the pair in the list
+    ordinal = fields.Integer(
+        metadata={"description": "Ignored on write: the list order is the ordinal"},
+        required=False,
+        load_default=None,
+    )
 
 
 class DatasetRelationshipPostSchema(Schema):

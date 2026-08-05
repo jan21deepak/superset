@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { t } from '@apache-superset/core/translation';
 import { css, styled } from '@apache-superset/core/theme';
 import {
@@ -25,6 +25,7 @@ import {
   Controls,
   MiniMap,
   ReactFlow,
+  useNodesState,
   type Edge,
   type NodeTypes,
 } from '@xyflow/react';
@@ -62,10 +63,14 @@ export default function RelationshipCanvas({
   relationships,
   onSelect,
 }: RelationshipCanvasProps) {
-  const { nodes, edges } = useMemo(
-    () => buildGraph(relationships),
-    [relationships],
-  );
+  const graph = useMemo(() => buildGraph(relationships), [relationships]);
+  // node state is local so that dragging a dataset around sticks
+  const [nodes, setNodes, onNodesChange] = useNodesState(graph.nodes);
+  const { edges } = graph;
+
+  useEffect(() => {
+    setNodes(graph.nodes);
+  }, [graph, setNodes]);
 
   const warnings = useMemo(
     () =>
@@ -104,6 +109,7 @@ export default function RelationshipCanvas({
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
           onEdgeClick={handleEdgeClick}
           fitView
           nodesDraggable

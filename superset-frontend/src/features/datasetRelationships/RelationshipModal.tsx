@@ -77,7 +77,7 @@ const StyledPair = styled.div(
 
 const loadDatasetOptions = (input = '', page: number, pageSize: number) => {
   const query = rison.encode({
-    filter: input,
+    filters: [{ col: 'table_name', opr: 'ct', value: input }],
     page,
     page_size: pageSize,
   });

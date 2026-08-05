@@ -104,11 +104,12 @@ class DatasetRelationshipDAO(BaseDAO[DatasetRelationship]):
         # doesn't trip the (relationship, ordinal) uniqueness constraint
         relationship.columns = []
         db.session.flush()
+        # the ordinal is the position in the list: deriving it keeps it unique
         relationship.columns = [
             DatasetRelationshipColumn(
                 source_column_id=pair["source_column_id"],
                 target_column_id=pair["target_column_id"],
-                ordinal=ordinal if pair.get("ordinal") is None else pair["ordinal"],
+                ordinal=ordinal,
             )
             for ordinal, pair in enumerate(column_pairs)
         ]
