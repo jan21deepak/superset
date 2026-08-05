@@ -30,6 +30,7 @@ import {
   Loading,
   Steps,
 } from '@superset-ui/core/components';
+import { propertyComparator } from '@superset-ui/core/components/Select/utils';
 import withToasts from 'src/components/MessageToasts/withToasts';
 
 import VizTypeGallery, {
@@ -52,6 +53,11 @@ export interface ChartCreationProps {
   user: UserWithPermissionsAndRoles;
   addSuccessToast: (arg: string) => void;
 }
+
+// Options are labeled with a React node, so the default comparator falls back
+// to sorting by option value (`{id}__{type}`), i.e. creation order. Sort by
+// the dataset name instead.
+const datasetNameComparator = propertyComparator('table_name');
 
 const ESTIMATED_NAV_HEIGHT = 56;
 const ELEMENTS_EXCEPT_VIZ_GALLERY = ESTIMATED_NAV_HEIGHT + 250;
@@ -341,6 +347,7 @@ export const ChartCreation = ({
                   onChange={changeDatasource}
                   options={loadDatasources}
                   optionFilterProps={['id', 'table_name']}
+                  sortComparator={datasetNameComparator}
                   placeholder={t('Choose a %s', datasetLabelLower())}
                   showSearch
                   value={datasource}
