@@ -190,11 +190,22 @@ class AsyncQueryManager:
 
             user_id = get_user_id()
 
+            # A cookie that cannot be decoded back to the session's channel is
+            # worthless: every async request would fail with a 401 until it
+            # expires. Re-mint it instead of trusting its mere presence, so a
+            # token that is expired, signed with a rotated secret, or rejected
+            # by stricter claim validation in a newer PyJWT heals on the next
+            # response rather than wedging the session.
+            channel_id_from_cookie = self._read_channel_id_from_cookie(
+                request.cookies.get(self._jwt_cookie_name)
+            )
+
             reset_token = (
-                not request.cookies.get(self._jwt_cookie_name)
+                channel_id_from_cookie is None
                 or "async_channel_id" not in session
                 or "async_user_id" not in session
                 or user_id != session["async_user_id"]
+                or channel_id_from_cookie != session["async_channel_id"]
             )
 
             if reset_token:
@@ -229,6 +240,25 @@ class AsyncQueryManager:
                 )
 
             return response
+
+    def _read_channel_id_from_cookie(self, token: Optional[str]) -> Optional[str]:
+        """
+        Return the channel encoded in the async JWT cookie, or ``None`` when the
+        cookie is missing or unusable.
+        """
+        if not token:
+            return None
+        try:
+            return self._decode_token(token)["channel"]
+        except Exception:  # pylint: disable=broad-except
+            logger.debug(
+                "Async token cookie could not be parsed; issuing a new one",
+                exc_info=True,
+            )
+            return None
+
+    def _decode_token(self, token: str) -> dict[str, Any]:
+        return jwt.decode(token, self._jwt_secret, algorithms=["HS256"])
 
     def get_guest_user_channel_id(self, guest_user: GuestUser) -> str:
         """
@@ -278,7 +308,7 @@ class AsyncQueryManager:
             raise AsyncQueryTokenException("Token not preset")
 
         try:
-            return jwt.decode(token, self._jwt_secret, algorithms=["HS256"])["channel"]
+            return self._decode_token(token)["channel"]
         except Exception as ex:
             logger.warning("Parse jwt failed", exc_info=True)
             raise AsyncQueryTokenException("Failed to parse token") from ex

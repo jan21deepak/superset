@@ -369,6 +369,88 @@ def test_validate_session_guest_user_creates_valid_token(async_query_manager):
         assert channel  # valid UUID string
 
 
+def _app_with_request_handlers(async_query_manager):
+    from flask import Flask
+
+    async_query_manager._jwt_cookie_secure = False
+    async_query_manager._jwt_cookie_domain = None
+    async_query_manager._jwt_cookie_samesite = "Lax"
+    async_query_manager._jwt_expiration_seconds = 3600
+
+    app = Flask(__name__)
+    app.secret_key = "test_secret_key_for_testing"  # noqa: S105
+    async_query_manager.register_request_handlers(app)
+
+    @app.route("/test")
+    def test_view():
+        return "ok"
+
+    return app
+
+
+def _issued_token(response):
+    cookie_header = [
+        v
+        for k, v in response.headers
+        if k == "Set-Cookie" and JWT_TOKEN_COOKIE_NAME in v
+    ]
+    if not cookie_header:
+        return None
+    return cookie_header[0].split("=", 1)[1].split(";")[0]
+
+
+def test_validate_session_replaces_undecodable_cookie(async_query_manager):
+    """Regression: a cookie that cannot be decoded is re-issued, not kept.
+
+    Without this the session keeps an async channel whose cookie always fails
+    to parse, so every async request answers 401 until the cookie expires.
+    """
+    app = _app_with_request_handlers(async_query_manager)
+
+    with mock.patch(
+        "superset.async_events.async_query_manager.get_user_id",
+        return_value=1,
+    ):
+        client = app.test_client()
+        client.get("/test")
+        # A token minted by an older release: `sub` is not a string, which
+        # PyJWT >= 2.10 rejects on decode.
+        client.set_cookie(
+            JWT_TOKEN_COOKIE_NAME,
+            encode(
+                {"channel": "stale_channel_id", "sub": 1},
+                JWT_TOKEN_SECRET,
+                algorithm="HS256",
+            ),
+        )
+
+        resp = client.get("/test")
+        token = _issued_token(resp)
+        assert token, "stale JWT cookie was not replaced"
+
+        mock_request = Mock()
+        mock_request.cookies = {JWT_TOKEN_COOKIE_NAME: token}
+        assert (
+            async_query_manager.parse_channel_id_from_request(mock_request)
+            != "stale_channel_id"
+        )
+
+
+def test_validate_session_keeps_valid_cookie(async_query_manager):
+    """A decodable cookie matching the session is left untouched."""
+    app = _app_with_request_handlers(async_query_manager)
+
+    with mock.patch(
+        "superset.async_events.async_query_manager.get_user_id",
+        return_value=1,
+    ):
+        client = app.test_client()
+        first_token = _issued_token(client.get("/test"))
+        assert first_token
+
+        assert _issued_token(client.get("/test")) is None
+
+
 @mark.parametrize(
     "cache_type, cache_backend",
     [
