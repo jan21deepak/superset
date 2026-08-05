@@ -17,7 +17,7 @@
  * under the License.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { debounce } from 'lodash-es';
+import { debounce, isEqual } from 'lodash-es';
 import {
   DataMask,
   getColumnLabel,
@@ -110,6 +110,12 @@ export default function CustomControls(props: CustomControlsTransformedProps) {
     filterState?.value !== undefined ? filterState.value : parsedDefault,
   );
 
+  // The value this component last wrote to the data mask. Used to tell our own
+  // round-trip apart from an external change so the hydrate effect can ignore
+  // the echo (keeping the "All" sentinel and in-flight typing) while still
+  // reacting to genuine external updates such as a cross-filter being cleared.
+  const lastEmittedValue = useRef<CustomControlsValue | null>(undefined);
+
   const options: Option[] = useMemo(() => {
     if (!columnLabel || data.length === 0) {
       return [];
@@ -159,10 +165,12 @@ export default function CustomControls(props: CustomControlsTransformedProps) {
       // Never leak the internal "All" sentinel into the shared data mask: an
       // empty selection (including "All") stores null. The control still shows
       // "All" because local state keeps the sentinel and the sync effect below
-      // ignores the null round-trip.
+      // ignores this specific echoed value.
+      const emitted: CustomControlsValue | null = isEmpty ? null : value;
+      lastEmittedValue.current = emitted;
       const dataMask: DataMask = {
         extraFormData: { filters },
-        filterState: { value: isEmpty ? null : value },
+        filterState: { value: emitted },
       };
       setDataMask(dataMask);
     },
@@ -198,12 +206,21 @@ export default function CustomControls(props: CustomControlsTransformedProps) {
   );
 
   useEffect(() => {
-    // Only hydrate from a concrete external value; a null (e.g. after "All" or
-    // a cleared cross filter) must not overwrite the locally displayed choice.
-    if (filterState?.value != null) {
-      setLocalValue(filterState.value);
-      hasUserInteracted.current = true;
+    const incoming = filterState?.value;
+    // Ignore the echo of our own emission (including the null we store for
+    // "All"/empty). Without this, a debounced text round-trip would revert
+    // characters typed in the meantime and the "All" sentinel would be wiped.
+    if (isEqual(incoming, lastEmittedValue.current)) {
+      return;
     }
+    // Undefined means "not set" and is handled by the default-value effect.
+    if (incoming === undefined) {
+      return;
+    }
+    // Any other external change (including a cross filter cleared elsewhere,
+    // which arrives as null) is applied so the control reflects reality.
+    setLocalValue(incoming === null ? undefined : incoming);
+    hasUserInteracted.current = true;
   }, [filterState?.value]);
 
   useEffect(() => {
