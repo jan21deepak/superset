@@ -156,11 +156,13 @@ export default function CustomControls(props: CustomControlsTransformedProps) {
         }
       }
 
-      // Keep the "All" sentinel in filterState so the control still shows the
-      // user's selection; only a genuinely empty selection clears it.
+      // Never leak the internal "All" sentinel into the shared data mask: an
+      // empty selection (including "All") stores null. The control still shows
+      // "All" because local state keeps the sentinel and the sync effect below
+      // ignores the null round-trip.
       const dataMask: DataMask = {
         extraFormData: { filters },
-        filterState: { value: isEmpty && !isAllSelected ? null : value },
+        filterState: { value: isEmpty ? null : value },
       };
       setDataMask(dataMask);
     },
@@ -196,7 +198,9 @@ export default function CustomControls(props: CustomControlsTransformedProps) {
   );
 
   useEffect(() => {
-    if (filterState?.value !== undefined) {
+    // Only hydrate from a concrete external value; a null (e.g. after "All" or
+    // a cleared cross filter) must not overwrite the locally displayed choice.
+    if (filterState?.value != null) {
       setLocalValue(filterState.value);
       hasUserInteracted.current = true;
     }

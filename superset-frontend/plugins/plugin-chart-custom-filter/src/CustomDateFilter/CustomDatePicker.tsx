@@ -161,6 +161,10 @@ export default function CustomDatePicker(
     emitRange(dateStrings[0], dateStrings[1]);
   };
 
+  // Recompute the relative preset ranges every time the picker is opened so
+  // shortcuts like "Today" stay current on dashboards left open past midnight.
+  const [openTick, setOpenTick] = useState(0);
+
   const presets = useMemo(() => {
     if (!presetRanges) {
       return undefined;
@@ -171,7 +175,8 @@ export default function CustomDatePicker(
       { label: t('Last 30 Days'), value: resolveRange('Last 30 Days') },
       { label: t('This Month'), value: resolveRange('This Month') },
     ];
-  }, [presetRanges]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetRanges, openTick]);
 
   const singleValue =
     pickerType === 'DatePicker' && typeof localValue === 'string'
@@ -201,6 +206,11 @@ export default function CustomDatePicker(
           showTime={showTime}
           format={formatString}
           onChange={handleRangeChange}
+          onOpenChange={open => {
+            if (open) {
+              setOpenTick(tick => tick + 1);
+            }
+          }}
           presets={presets}
           value={rangeValue}
         />
