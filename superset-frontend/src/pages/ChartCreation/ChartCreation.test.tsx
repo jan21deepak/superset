@@ -227,6 +227,49 @@ test('dropdown displays matching datasets when user types a search term', async 
   expect(screen.getByText('flights_delayed')).toBeInTheDocument();
 });
 
+test('dropdown lists datasets sorted by name, not by id', async () => {
+  fetchMock.clearHistory().removeRoutes();
+  fetchMock.get(/\/api\/v1\/dataset\/\?q=.*/, {
+    body: {
+      result: [
+        {
+          id: 2,
+          table_name: 'zebra',
+          datasource_type: 'table',
+          database: { database_name: 'examples' },
+          schema: 'public',
+        },
+        {
+          id: 5,
+          table_name: 'apple',
+          datasource_type: 'table',
+          database: { database_name: 'examples' },
+          schema: 'public',
+        },
+        {
+          id: 4,
+          table_name: 'mango',
+          datasource_type: 'table',
+          database: { database_name: 'examples' },
+          schema: 'public',
+        },
+      ],
+      count: 3,
+    },
+    status: 200,
+  });
+
+  await renderComponent();
+
+  userEvent.click(screen.getByRole('combobox', { name: 'Dataset' }));
+
+  await screen.findByText('apple');
+  const options = document.querySelectorAll('.ant-select-item-option');
+  expect(
+    Array.from(options).map(option => option.textContent?.split('examples')[0]),
+  ).toEqual(['apple', 'mango', 'zebra']);
+});
+
 test('handles special characters in dataset name from URL parameter', async () => {
   fetchMock.clearHistory().removeRoutes();
   fetchMock.get(/\/api\/v1\/dataset\/\?q=.*/, {
