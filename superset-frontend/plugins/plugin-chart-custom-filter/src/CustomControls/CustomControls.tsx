@@ -17,6 +17,7 @@
  * under the License.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { debounce } from 'lodash';
 import {
   DataMask,
   getColumnLabel,
@@ -24,7 +25,13 @@ import {
 } from '@superset-ui/core';
 import { styled } from '@apache-superset/core/theme';
 import { t } from '@apache-superset/core/translation';
-import { Checkbox, Input, Radio, Select } from '@superset-ui/core/components';
+import {
+  Checkbox,
+  Constants,
+  Input,
+  Radio,
+  Select,
+} from '@superset-ui/core/components';
 import { CustomControlsTransformedProps, CustomControlsValue } from './types';
 
 const ALL_VALUE = 'ALL_SELECTED';
@@ -167,6 +174,25 @@ export default function CustomControls(props: CustomControlsTransformedProps) {
     [emitFilter],
   );
 
+  // The text box emits an ILIKE cross filter on every keystroke, so debounce
+  // the emission (the input itself stays controlled) to avoid refetching every
+  // dashboard chart per character, mirroring the native Select filter.
+  const debouncedEmit = useMemo(
+    () => debounce(emitFilter, Constants.FAST_DEBOUNCE),
+    [emitFilter],
+  );
+
+  useEffect(() => () => debouncedEmit.cancel(), [debouncedEmit]);
+
+  const handleTextChange = useCallback(
+    (value: string) => {
+      hasUserInteracted.current = true;
+      setLocalValue(value);
+      debouncedEmit(value);
+    },
+    [debouncedEmit],
+  );
+
   useEffect(() => {
     if (filterState?.value !== undefined) {
       setLocalValue(filterState.value);
@@ -191,7 +217,7 @@ export default function CustomControls(props: CustomControlsTransformedProps) {
         <Input
           placeholder={t('Filter by %s', columnLabel || t('value'))}
           value={typeof localValue === 'string' ? localValue : undefined}
-          onChange={event => handleChange(event.target.value)}
+          onChange={event => handleTextChange(event.target.value)}
           allowClear
         />
       );
@@ -233,6 +259,11 @@ export default function CustomControls(props: CustomControlsTransformedProps) {
           options={options}
           value={Array.isArray(localValue) ? localValue : undefined}
           onChange={value => handleChange(value as CustomControlsValue)}
+          style={{
+            display: 'flex',
+            flexDirection: orientation === 'horizontal' ? 'row' : 'column',
+            flexWrap: 'wrap',
+          }}
         />
       );
     }

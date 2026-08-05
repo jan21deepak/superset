@@ -16,19 +16,19 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { buildQueryContext } from '@superset-ui/core';
-import { CustomDateFilterFormData } from './types';
+import { VizType } from '@superset-ui/core';
+import buildQuery from '../../src/CustomDateFilter/buildQuery';
+import { CustomDateFilterFormData } from '../../src/CustomDateFilter/types';
 
-// The date picker is purely client-side, so the query results are never read.
-// Keep it minimal to satisfy the chart-data contract without scanning the
-// underlying table.
-export default function buildQuery(formData: CustomDateFilterFormData) {
-  return buildQueryContext(formData, baseQueryObject => [
-    {
-      ...baseQueryObject,
-      groupby: [],
-      metrics: [],
-      row_limit: 1,
-    },
-  ]);
-}
+const formData: CustomDateFilterFormData = {
+  datasource: '1__table',
+  viz_type: VizType.CustomDateFilter,
+  filterColumn: 'order_date',
+};
+
+test('builds a minimal query since the picker is client-side only', () => {
+  const { queries } = buildQuery(formData);
+  expect(queries[0].groupby).toEqual([]);
+  expect(queries[0].metrics).toEqual([]);
+  expect(queries[0].row_limit).toBe(1);
+});

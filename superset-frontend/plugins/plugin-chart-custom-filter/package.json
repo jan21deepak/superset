@@ -26,7 +26,9 @@
   "publishConfig": {
     "access": "public"
   },
-  "dependencies": {},
+  "dependencies": {
+    "lodash": "^4.17.21"
+  },
   "peerDependencies": {
     "@apache-superset/core": "*",
     "@superset-ui/chart-controls": "*",
