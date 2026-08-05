@@ -461,13 +461,16 @@ export default function TableChart<D extends DataRecord = DataRecord>(
 
   // only take relevant page size options
   const pageSizeOptions = useMemo(() => {
-    const getServerPagination = (n: number) => n <= rowCount;
-    return (
-      serverPagination ? SERVER_PAGE_SIZE_OPTIONS : PAGE_SIZE_OPTIONS
-    ).filter(([n]) =>
-      serverPagination ? getServerPagination(n) : n <= 2 * data.length,
+    if (serverPagination) {
+      // Keep every configured server page-size option available, even when it
+      // is larger than the current total row count. Filtering by rowCount would
+      // drop the configured page size and break the size selector.
+      return SERVER_PAGE_SIZE_OPTIONS as SizeOption[];
+    }
+    return PAGE_SIZE_OPTIONS.filter(
+      ([n]) => n <= 2 * data.length,
     ) as SizeOption[];
-  }, [data.length, rowCount, serverPagination]);
+  }, [data.length, serverPagination]);
 
   const getValueRange = useCallback(
     function getValueRange(key: string, alignPositiveNegative: boolean) {
