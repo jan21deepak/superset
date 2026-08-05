@@ -56,6 +56,20 @@ interface ColumnPair {
   target_column_id?: number;
 }
 
+// AsyncSelect is labelInValue, so the dataset is held as a labeled value
+interface DatasetValue {
+  value: number;
+  label: string;
+}
+
+const datasetValue = (
+  id: number | null | undefined,
+  name: string | null | undefined,
+): DatasetValue | undefined =>
+  id === null || id === undefined
+    ? undefined
+    : { value: id, label: name ?? t('Dataset %s', id) };
+
 const StyledField = styled.div(
   ({ theme }) => css`
     margin-bottom: ${theme.sizeUnit * 4}px;
@@ -113,8 +127,14 @@ export default function RelationshipModal({
 }: RelationshipModalProps) {
   const isEditMode = Boolean(relationship);
   const [name, setName] = useState('');
-  const [sourceDatasetId, setSourceDatasetId] = useState<number | undefined>();
-  const [targetDatasetId, setTargetDatasetId] = useState<number | undefined>();
+  const [sourceDataset, setSourceDataset] = useState<
+    DatasetValue | undefined
+  >();
+  const [targetDataset, setTargetDataset] = useState<
+    DatasetValue | undefined
+  >();
+  const sourceDatasetId = sourceDataset?.value;
+  const targetDatasetId = targetDataset?.value;
   const [cardinality, setCardinality] = useState<Cardinality>('many_to_one');
   const [joinType, setJoinType] = useState<JoinType>('inner');
   const [pairs, setPairs] = useState<ColumnPair[]>([{}]);
@@ -123,8 +143,18 @@ export default function RelationshipModal({
 
   useEffect(() => {
     setName(relationship?.name ?? '');
-    setSourceDatasetId(relationship?.source_dataset_id);
-    setTargetDatasetId(relationship?.target_dataset_id);
+    setSourceDataset(
+      datasetValue(
+        relationship?.source_dataset_id,
+        relationship?.source_dataset_name,
+      ),
+    );
+    setTargetDataset(
+      datasetValue(
+        relationship?.target_dataset_id,
+        relationship?.target_dataset_name,
+      ),
+    );
     setCardinality(relationship?.cardinality ?? 'many_to_one');
     setJoinType(relationship?.join_type ?? 'inner');
     setPairs(
@@ -187,13 +217,13 @@ export default function RelationshipModal({
   };
 
   // columns belong to a dataset, so switching one clears its side of the pairs
-  const changeDataset = (side: 'source' | 'target', datasetId: number) => {
+  const changeDataset = (side: 'source' | 'target', dataset: DatasetValue) => {
     const key = side === 'source' ? 'source_column_id' : 'target_column_id';
     setPairs(current => current.map(pair => ({ ...pair, [key]: undefined })));
     if (side === 'source') {
-      setSourceDatasetId(datasetId);
+      setSourceDataset(dataset);
     } else {
-      setTargetDatasetId(datasetId);
+      setTargetDataset(dataset);
     }
   };
 
@@ -231,18 +261,18 @@ export default function RelationshipModal({
         <div className="control-label">{t('Source dataset')}</div>
         <AsyncSelect
           ariaLabel={t('Source dataset')}
-          value={sourceDatasetId}
+          value={sourceDataset}
           options={loadDatasetOptions}
-          onChange={value => changeDataset('source', value as number)}
+          onChange={value => changeDataset('source', value as DatasetValue)}
         />
       </StyledField>
       <StyledField>
         <div className="control-label">{t('Target dataset')}</div>
         <AsyncSelect
           ariaLabel={t('Target dataset')}
-          value={targetDatasetId}
+          value={targetDataset}
           options={loadDatasetOptions}
-          onChange={value => changeDataset('target', value as number)}
+          onChange={value => changeDataset('target', value as DatasetValue)}
         />
       </StyledField>
       <StyledField>

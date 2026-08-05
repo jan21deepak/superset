@@ -19,7 +19,12 @@
 
 import fetchMock from 'fetch-mock';
 import userEvent from '@testing-library/user-event';
-import { render, screen, waitFor } from 'spec/helpers/testing-library';
+import {
+  render,
+  screen,
+  selectOption,
+  waitFor,
+} from 'spec/helpers/testing-library';
 import RelationshipModal from './RelationshipModal';
 import type { DatasetRelationship } from './types';
 
@@ -130,4 +135,27 @@ test('adds and removes column pairs', async () => {
       screen.getAllByTestId('dataset-relationship-column-pair'),
     ).toHaveLength(1),
   );
+});
+
+test('changing a dataset clears its columns and keeps the id numeric', async () => {
+  const onSave = jest.fn();
+  render(
+    <RelationshipModal
+      show
+      relationship={relationship}
+      onHide={jest.fn()}
+      onSave={onSave}
+    />,
+  );
+
+  expect(await screen.findByText('customers')).toBeInTheDocument();
+
+  await selectOption('orders', 'Target dataset: customers');
+
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled(),
+  );
+  expect(
+    screen.getByRole('combobox', { name: 'Target dataset: orders' }),
+  ).toBeInTheDocument();
 });
