@@ -20,6 +20,7 @@ from unittest.mock import MagicMock
 from pytest_mock import MockerFixture
 
 from superset import db
+from superset.commands.database.exceptions import DatabaseConnectionFailedError
 from superset.commands.database.update import UpdateDatabaseCommand
 from superset.extensions import security_manager
 from superset.utils import json
@@ -667,3 +668,32 @@ def test_update_broken_connection(mocker: MockerFixture) -> None:
     UpdateDatabaseCommand(1, {}).run()
 
     update_catalog_attribute.assert_called_once_with(1, "main")
+
+
+def test_update_unreachable_connection(mocker: MockerFixture) -> None:
+    """
+    Test that metadata can be updated when the connection is unreachable.
+    """
+    database = mocker.MagicMock(database_name="Broken DB")
+    database.get_default_catalog.side_effect = Exception("Broken connection")
+    database.id = 1
+    new_db = mocker.MagicMock(database_name="Broken DB")
+    new_db.get_default_catalog.side_effect = Exception("Broken connection")
+
+    database_dao = mocker.patch("superset.commands.database.update.DatabaseDAO")
+    database_dao.find_by_id.return_value = database
+    database_dao.update.return_value = new_db
+
+    sync_permissions = mocker.patch(
+        "superset.commands.database.update.SyncPermissionsCommand"
+    )
+    sync_permissions.return_value.run.side_effect = DatabaseConnectionFailedError()
+
+    update_catalog_attribute = mocker.patch.object(
+        UpdateDatabaseCommand,
+        "_update_catalog_attribute",
+    )
+
+    assert UpdateDatabaseCommand(1, {"expose_in_sqllab": False}).run() == new_db
+
+    update_catalog_attribute.assert_not_called()
