@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from datetime import datetime
 from typing import Optional, Union
 
 import pandas as pd
@@ -22,12 +23,15 @@ from flask_babel import gettext as _
 from superset.exceptions import InvalidPostProcessingError
 from superset.utils.pandas_postprocessing.utils import RESAMPLE_METHOD
 
+TimeRange = tuple[Optional[datetime], Optional[datetime]]
+
 
 def resample(
     df: pd.DataFrame,
     rule: str,
     method: str,
     fill_value: Optional[Union[float, int]] = None,
+    time_range: Optional[TimeRange] = None,
 ) -> pd.DataFrame:
     """
     support upsampling in resample
@@ -36,6 +40,11 @@ def resample(
     :param rule: The offset string representing target conversion.
     :param method: How to fill the NaN value after resample.
     :param fill_value: What values do fill missing.
+    :param time_range: Optional ``(start, end)`` boundaries of the query time
+        range. When provided, gap filling is applied to the entire target period
+        instead of only spanning the range between the first and last data
+        points. ``end`` is treated as exclusive, matching the semantics of the
+        time filter.
     :return: DataFrame after resample
     :raises InvalidPostProcessingError: If the request in incorrect
     """
@@ -46,6 +55,16 @@ def resample(
             _("Resample method should be in ") + ", ".join(RESAMPLE_METHOD) + "."
         )
 
+    start, end = time_range or (None, None)
+    if start is not None or end is not None:
+        # Extend the index with the target boundaries so that resampling (and
+        # therefore gap filling) covers the entire target period rather than
+        # only the interval between the first and last data points.
+        boundaries = pd.DatetimeIndex(
+            [pd.Timestamp(value) for value in (start, end) if value is not None]
+        )
+        df = df.reindex(df.index.union(boundaries))
+
     if method == "asfreq" and fill_value is not None:
         _df = df.resample(rule).asfreq(fill_value=fill_value)
         _df = _df.fillna(fill_value)
@@ -55,4 +74,10 @@ def resample(
         _df = getattr(df.resample(rule), method)()
         if method in ("ffill", "bfill"):
             _df = getattr(_df, method)()
+
+    if end is not None:
+        # ``end`` is exclusive, so drop any bin generated at or beyond it
+        # (e.g. the boundary added above to extend the target period).
+        _df = _df[_df.index < pd.Timestamp(end)]
+
     return _df

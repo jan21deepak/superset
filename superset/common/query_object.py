@@ -536,5 +536,12 @@ class QueryObject:  # pylint: disable=too-many-instance-attributes
                         )
                     )
                 options = post_process.get("options", {})
+                if operation == "resample" and "time_range" not in options:
+                    # Apply gap filling to the entire target period (from the
+                    # query time filter) rather than only between data points.
+                    options = {
+                        **options,
+                        "time_range": (self.from_dttm, self.to_dttm),
+                    }
                 df = getattr(pandas_postprocessing, operation)(df, **options)
             return df
