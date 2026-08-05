@@ -699,6 +699,10 @@ DEFAULT_FEATURE_FLAGS: dict[str, bool] = {
     # Enable semantic layers and show semantic views alongside datasets
     # @lifecycle: development
     "SEMANTIC_LAYERS": False,
+    # Enable declaring relationships between datasets (SIP-217). Relationships
+    # are descriptive metadata: they don't affect query generation.
+    # @lifecycle: development
+    "DATASET_RELATIONSHIPS": False,
     # Enables advanced data type support
     # @lifecycle: development
     "ENABLE_ADVANCED_DATA_TYPES": False,

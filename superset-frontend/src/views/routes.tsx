@@ -37,6 +37,13 @@ const ChartCreation = lazy(
     import(/* webpackChunkName: "ChartCreation" */ 'src/pages/ChartCreation'),
 );
 
+const DatasetRelationships = lazy(
+  () =>
+    import(
+      /* webpackChunkName: "DatasetRelationships" */ 'src/pages/DatasetRelationships'
+    ),
+);
+
 const AnnotationLayerList = lazy(
   () =>
     import(
@@ -243,6 +250,13 @@ export const routes: Routes = [
 if (isFeatureEnabled(FeatureFlag.TaggingSystem)) {
   routes.push({ path: RoutePaths.ALL_ENTITIES, Component: AllEntities });
   routes.push({ path: RoutePaths.TAGS, Component: Tags });
+}
+
+if (isFeatureEnabled(FeatureFlag.DatasetRelationships)) {
+  routes.push({
+    path: RoutePaths.DATASET_RELATIONSHIPS,
+    Component: DatasetRelationships,
+  });
 }
 
 const user = getBootstrapData()?.user;

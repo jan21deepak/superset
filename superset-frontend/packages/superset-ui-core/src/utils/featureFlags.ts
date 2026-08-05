@@ -36,6 +36,7 @@ export enum FeatureFlag {
   DashboardVirtualizationDeferData = 'DASHBOARD_VIRTUALIZATION_DEFER_DATA',
   DatapanelClosedByDefault = 'DATAPANEL_CLOSED_BY_DEFAULT',
   DatasetFolders = 'DATASET_FOLDERS',
+  DatasetRelationships = 'DATASET_RELATIONSHIPS',
   DateRangeTimeshiftsEnabled = 'DATE_RANGE_TIMESHIFTS_ENABLED',
   DisableEmbeddedSupersetLogout = 'DISABLE_EMBEDDED_SUPERSET_LOGOUT',
   /** @deprecated */

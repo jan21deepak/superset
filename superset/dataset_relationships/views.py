@@ -14,11 +14,24 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from . import (  # noqa: F401
-    core,
-    dataset_relationship,
-    dynamic_plugins,
-    purge_audit_log,
-    sql_lab,
-    user_attributes,
-)
+
+from flask_appbuilder import expose
+from flask_appbuilder.security.decorators import has_access, permission_name
+
+from superset.superset_typing import FlaskResponse
+from superset.views.base import BaseSupersetView
+
+
+class DatasetRelationshipsView(BaseSupersetView):
+    """
+    Serves the relationship canvas, which is rendered by the frontend.
+    """
+
+    route_base = "/dataset_relationships"
+    class_permission_name = "Dataset"
+
+    @expose("/")
+    @has_access
+    @permission_name("read")
+    def canvas(self) -> FlaskResponse:
+        return super().render_app_template()

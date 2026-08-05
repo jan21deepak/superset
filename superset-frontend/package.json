@@ -166,6 +166,7 @@
     "@visx/scale": "^4.0.0",
     "@visx/tooltip": "^4.0.0",
     "@visx/xychart": "^4.0.0",
+    "@xyflow/react": "12.11.2",
     "ag-grid-community": "36.0.2",
     "ag-grid-react": "36.0.2",
     "antd": "^6.5.1",

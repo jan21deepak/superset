@@ -64,6 +64,7 @@ from superset.constants import MODEL_API_RW_METHOD_PERMISSION_MAP, RouteMethod
 from superset.daos.dashboard import DashboardDAO
 from superset.daos.dataset import DatasetDAO
 from superset.databases.filters import DatabaseFilter
+from superset.dataset_relationships.utils import get_visible_dataset_relationships
 from superset.datasets.filters import (
     DatasetCertifiedFilter,
     DatasetDeletedStateFilter,
@@ -1616,6 +1617,11 @@ class DatasetRestApi(SoftDeleteApiMixin, BaseSupersetModelRestApi):
                 }
                 for f in detailed_rls
             ]
+
+        if is_feature_enabled("DATASET_RELATIONSHIPS"):
+            response[API_RESULT_RES_KEY]["relationships"] = (
+                get_visible_dataset_relationships(table.id)
+            )
 
         return set_version_etag(
             self.response(200, **response),
