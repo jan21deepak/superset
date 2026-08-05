@@ -180,7 +180,7 @@ test('cross-filter does nothing when clicked name is missing from labelMap (pie 
   expect(setDataMask).not.toHaveBeenCalled();
 });
 
-test('cross-filter does nothing when clicked name is empty (pie "Total" text)', () => {
+test('cross-filter does nothing when clicked empty name is not a real category (pie "Total" text)', () => {
   const setDataMask = jest.fn();
   const props = buildProps({
     groupby: ['topics'],
@@ -193,6 +193,33 @@ test('cross-filter does nothing when clicked name is empty (pie "Total" text)', 
   handlers.click({ name: '' });
 
   expect(setDataMask).not.toHaveBeenCalled();
+});
+
+test('cross-filter still emits for a genuine empty-string category', () => {
+  const setDataMask = jest.fn();
+  const props = buildProps({
+    groupby: ['topics'],
+    labelMap: { '': [''] },
+    selectedValues: {},
+    setDataMask,
+  });
+
+  const handlers = allEventHandlers(props);
+  handlers.click({ name: '' });
+
+  expect(setDataMask).toHaveBeenCalledWith(
+    expect.objectContaining({
+      extraFormData: {
+        filters: [
+          {
+            col: 'topics',
+            op: 'IN',
+            val: [''],
+          },
+        ],
+      },
+    }),
+  );
 });
 
 test('cross-filter does nothing when emitCrossFilters is false', () => {
