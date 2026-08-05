@@ -26,9 +26,11 @@ const formData: CustomDateFilterFormData = {
   filterColumn: 'order_date',
 };
 
-test('builds a minimal query that selects the filter column', () => {
+test('builds a minimal raw query that selects the filter column', () => {
   const { queries } = buildQuery(formData);
   expect(queries[0].columns).toEqual(['order_date']);
-  expect(queries[0].metrics).toEqual([]);
+  // metrics stay undefined so the backend keeps the query in raw mode
+  // (no GROUP BY over the whole column, whose result is never read).
+  expect(queries[0].metrics).toBeUndefined();
   expect(queries[0].row_limit).toBe(1);
 });

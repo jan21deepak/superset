@@ -21,8 +21,9 @@ import { CustomDateFilterFormData } from './types';
 
 // The date picker is purely client-side, so the query results are never read.
 // The backend rejects a query with no metrics/columns ("Empty query?"), so
-// select the configured column but cap the row limit to avoid scanning the
-// underlying table.
+// select a single raw row of the configured column. Leaving metrics undefined
+// (rather than []) keeps the query in raw mode: `metrics is not None` would
+// otherwise force a GROUP BY that scans/aggregates the whole column for nothing.
 export default function buildQuery(formData: CustomDateFilterFormData) {
   const { filterColumn } = formData;
 
@@ -30,7 +31,8 @@ export default function buildQuery(formData: CustomDateFilterFormData) {
     {
       ...baseQueryObject,
       columns: filterColumn ? [filterColumn] : [],
-      metrics: [],
+      metrics: undefined,
+      is_timeseries: false,
       row_limit: 1,
     },
   ]);

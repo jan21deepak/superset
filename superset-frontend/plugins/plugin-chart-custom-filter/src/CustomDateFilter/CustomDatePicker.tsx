@@ -169,7 +169,7 @@ export default function CustomDatePicker(
       { label: t('Today'), value: resolveRange('Today') },
       { label: t('Last 7 Days'), value: resolveRange('Last 7 Days') },
       { label: t('Last 30 Days'), value: resolveRange('Last 30 Days') },
-      { label: t('This Month'), value: resolveRange('This Month (Full)') },
+      { label: t('This Month'), value: resolveRange('This Month') },
     ];
   }, [presetRanges]);
 
