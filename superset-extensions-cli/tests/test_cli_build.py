@@ -344,6 +344,41 @@ def test_build_manifest_exits_when_extension_json_missing(isolated_filesystem):
     assert exc_info.value.code == 1
 
 
+@pytest.mark.unit
+def test_build_manifest_reports_stale_core(isolated_filesystem, capsys):
+    """A stale apache-superset-core yields a clear version-skew message."""
+    from pydantic import ValidationError
+
+    extension_data = {
+        "publisher": "test-org",
+        "name": "test-extension",
+        "displayName": "Test Extension",
+        "version": "1.0.0",
+        "permissions": [],
+    }
+    (isolated_filesystem / "extension.json").write_text(json.dumps(extension_data))
+
+    # Simulate an older core where ``id`` is still a required input field, so
+    # constructing the manifest without ``id`` raises a validation error.
+    stale_error = ValidationError.from_exception_data(
+        "Manifest",
+        [{"type": "missing", "loc": ("id",), "input": {}}],
+    )
+    stale_manifest = Mock(side_effect=stale_error)
+    stale_manifest.model_fields = {"id": Mock()}
+
+    with (
+        patch("superset_extensions_cli.cli.Manifest", stale_manifest),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        build_manifest(isolated_filesystem, None)
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "apache-superset-core" in err
+    assert "out of date" in err
+
+
 # Frontend Build Tests
 @pytest.mark.unit
 def test_clean_dist_frontend_removes_frontend_dist(isolated_filesystem):
