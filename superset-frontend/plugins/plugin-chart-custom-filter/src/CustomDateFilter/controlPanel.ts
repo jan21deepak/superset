@@ -26,6 +26,8 @@ import {
 const config: ControlPanelConfig = {
   controlPanelSections: [
     {
+      // Section labels are typed as ReactNode (no lazy form); keep eager t().
+      // eslint-disable-next-line i18n-strings/no-eager-t-in-config
       label: t('Query'),
       expanded: true,
       controlSetRows: [
@@ -34,8 +36,8 @@ const config: ControlPanelConfig = {
             name: 'filterColumn',
             config: {
               ...sharedControls.groupby,
-              label: t('Filter Column (Temporal)'),
-              description: t('Temporal column to apply date filters to.'),
+              label: () => t('Filter Column (Temporal)'),
+              description: () => t('Temporal column to apply date filters to.'),
               multi: false,
             },
           },
@@ -43,6 +45,7 @@ const config: ControlPanelConfig = {
       ],
     },
     {
+      // eslint-disable-next-line i18n-strings/no-eager-t-in-config
       label: t('Custom Date Picker Options'),
       expanded: true,
       controlSetRows: [
@@ -51,14 +54,15 @@ const config: ControlPanelConfig = {
             name: 'pickerType',
             config: {
               type: 'SelectControl',
-              label: t('Picker Type'),
+              label: () => t('Picker Type'),
               default: 'DatePicker',
               choices: [
                 ['DatePicker', t('Single Date Picker')],
                 ['RangePicker', t('Date Range Picker')],
               ],
               renderTrigger: true,
-              description: t('Select the type of date UI control to display'),
+              description: () =>
+                t('Select the type of date UI control to display'),
             },
           },
         ],
@@ -67,12 +71,11 @@ const config: ControlPanelConfig = {
             name: 'showTime',
             config: {
               type: 'CheckboxControl',
-              label: t('Enable Time Selection'),
+              label: () => t('Enable Time Selection'),
               default: false,
               renderTrigger: true,
-              description: t(
-                'Allow users to select specific times (hours, minutes)',
-              ),
+              description: () =>
+                t('Allow users to select specific times (hours, minutes)'),
             },
           },
         ],
@@ -81,12 +84,13 @@ const config: ControlPanelConfig = {
             name: 'presetRanges',
             config: {
               type: 'CheckboxControl',
-              label: t('Enable Quick Preset Ranges'),
+              label: () => t('Enable Quick Preset Ranges'),
               default: false,
               renderTrigger: true,
-              description: t(
-                'Show handy presets like "Today" and "Last 7 Days" on range pickers',
-              ),
+              description: () =>
+                t(
+                  'Show handy presets like "Today" and "Last 7 Days" on range pickers',
+                ),
               visibility: ({ controls }: ControlPanelsContainerProps) =>
                 controls?.pickerType?.value === 'RangePicker',
             },
@@ -95,6 +99,7 @@ const config: ControlPanelConfig = {
       ],
     },
     {
+      // eslint-disable-next-line i18n-strings/no-eager-t-in-config
       label: t('Default Filters'),
       expanded: true,
       controlSetRows: [
@@ -103,7 +108,7 @@ const config: ControlPanelConfig = {
             name: 'defaultType',
             config: {
               type: 'SelectControl',
-              label: t('Default Value Type'),
+              label: () => t('Default Value Type'),
               default: 'None',
               choices: [
                 ['None', t('No Default Filter')],
@@ -111,9 +116,10 @@ const config: ControlPanelConfig = {
                 ['Dynamic', t('Dynamic Preset (e.g. Last Month)')],
               ],
               renderTrigger: true,
-              description: t(
-                'Configure whether the chart loads with a pre-selected date.',
-              ),
+              description: () =>
+                t(
+                  'Configure whether the chart loads with a pre-selected date.',
+                ),
             },
           },
         ],
@@ -122,12 +128,13 @@ const config: ControlPanelConfig = {
             name: 'defaultStaticValue',
             config: {
               type: 'TextControl',
-              label: t('Static Default Value'),
+              label: () => t('Static Default Value'),
               default: '',
               renderTrigger: true,
-              description: t(
-                'For single dates: YYYY-MM-DD. For ranges: YYYY-MM-DD and YYYY-MM-DD',
-              ),
+              description: () =>
+                t(
+                  'For single dates: YYYY-MM-DD. For ranges: YYYY-MM-DD and YYYY-MM-DD',
+                ),
               visibility: ({ controls }: ControlPanelsContainerProps) =>
                 controls?.defaultType?.value === 'Static',
             },
@@ -138,7 +145,7 @@ const config: ControlPanelConfig = {
             name: 'defaultDynamicValue',
             config: {
               type: 'SelectControl',
-              label: t('Dynamic Preset Default'),
+              label: () => t('Dynamic Preset Default'),
               default: 'Last 30 Days',
               choices: [
                 ['Today', t('Today')],
@@ -151,9 +158,8 @@ const config: ControlPanelConfig = {
                 ['This Year', t('This Year')],
               ],
               renderTrigger: true,
-              description: t(
-                'Select a dynamic time range preset that computes on load.',
-              ),
+              description: () =>
+                t('Select a dynamic time range preset that computes on load.'),
               visibility: ({ controls }: ControlPanelsContainerProps) =>
                 controls?.defaultType?.value === 'Dynamic',
             },

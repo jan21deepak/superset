@@ -26,6 +26,8 @@ import {
 const config: ControlPanelConfig = {
   controlPanelSections: [
     {
+      // Section labels are typed as ReactNode (no lazy form); keep eager t().
+      // eslint-disable-next-line i18n-strings/no-eager-t-in-config
       label: t('Query'),
       expanded: true,
       controlSetRows: [
@@ -34,10 +36,11 @@ const config: ControlPanelConfig = {
             name: 'filterColumn',
             config: {
               ...sharedControls.groupby,
-              label: t('Filter Column'),
-              description: t(
-                'Column to filter on and fetch options for. Options will be queried from this column.',
-              ),
+              label: () => t('Filter Column'),
+              description: () =>
+                t(
+                  'Column to filter on and fetch options for. Options will be queried from this column.',
+                ),
               multi: false,
             },
           },
@@ -46,6 +49,7 @@ const config: ControlPanelConfig = {
       ],
     },
     {
+      // eslint-disable-next-line i18n-strings/no-eager-t-in-config
       label: t('Custom Controls'),
       expanded: true,
       controlSetRows: [
@@ -54,7 +58,7 @@ const config: ControlPanelConfig = {
             name: 'controlType',
             config: {
               type: 'SelectControl',
-              label: t('Control Type'),
+              label: () => t('Control Type'),
               default: 'Dropdown',
               choices: [
                 ['Dropdown', t('Dropdown')],
@@ -63,7 +67,7 @@ const config: ControlPanelConfig = {
                 ['TextBox', t('Text Box')],
               ],
               renderTrigger: true,
-              description: t('Select the type of UI control to display'),
+              description: () => t('Select the type of UI control to display'),
             },
           },
         ],
@@ -72,14 +76,15 @@ const config: ControlPanelConfig = {
             name: 'orientation',
             config: {
               type: 'SelectControl',
-              label: t('Orientation'),
+              label: () => t('Orientation'),
               default: 'vertical',
               choices: [
                 ['vertical', t('Vertical')],
                 ['horizontal', t('Horizontal')],
               ],
               renderTrigger: true,
-              description: t('Layout orientation for Radio/Checkbox controls'),
+              description: () =>
+                t('Layout orientation for Radio/Checkbox controls'),
             },
           },
         ],
@@ -88,12 +93,13 @@ const config: ControlPanelConfig = {
             name: 'includeAllOption',
             config: {
               type: 'CheckboxControl',
-              label: t('Include "All" Option'),
+              label: () => t('Include "All" Option'),
               default: false,
               renderTrigger: true,
-              description: t(
-                'Add an "All" option to clear filters (useful for Radio buttons)',
-              ),
+              description: () =>
+                t(
+                  'Add an "All" option to clear filters (useful for Radio buttons)',
+                ),
             },
           },
         ],
@@ -102,12 +108,13 @@ const config: ControlPanelConfig = {
             name: 'multiSelect',
             config: {
               type: 'CheckboxControl',
-              label: t('Allow Multiple Selections'),
+              label: () => t('Allow Multiple Selections'),
               default: true,
               renderTrigger: true,
-              description: t(
-                'Allow users to select multiple options from the Dropdown at once.',
-              ),
+              description: () =>
+                t(
+                  'Allow users to select multiple options from the Dropdown at once.',
+                ),
               visibility: ({ controls }: ControlPanelsContainerProps) =>
                 controls?.controlType?.value === 'Dropdown',
             },
@@ -118,15 +125,16 @@ const config: ControlPanelConfig = {
             name: 'defaultValue',
             config: {
               type: 'TextControl',
-              label: t('Default Value'),
+              label: () => t('Default Value'),
               default: '',
               renderTrigger: true,
-              description: t(
-                'Pre-selected default value shown on load. ' +
-                  'For multi-select controls, separate multiple values with commas (e.g. "Value 1, Value 2"). ' +
-                  'The cross-filter is emitted for the default value on load. ' +
-                  'Clearing back to default also clears the cross-filter.',
-              ),
+              description: () =>
+                t(
+                  'Pre-selected default value shown on load. ' +
+                    'For multi-select controls, separate multiple values with commas (e.g. "Value 1, Value 2"). ' +
+                    'The cross-filter is emitted for the default value on load. ' +
+                    'Clearing back to default also clears the cross-filter.',
+                ),
             },
           },
         ],
@@ -135,10 +143,11 @@ const config: ControlPanelConfig = {
             name: 'hideTitle',
             config: {
               type: 'CheckboxControl',
-              label: t('Hide Title'),
+              label: () => t('Hide Title'),
               default: false,
               renderTrigger: true,
-              description: t('Hide the column name title above the control.'),
+              description: () =>
+                t('Hide the column name title above the control.'),
             },
           },
         ],
@@ -147,10 +156,10 @@ const config: ControlPanelConfig = {
             name: 'boldTitle',
             config: {
               type: 'CheckboxControl',
-              label: t('Bold Title'),
+              label: () => t('Bold Title'),
               default: true,
               renderTrigger: true,
-              description: t('Show the column title in bold.'),
+              description: () => t('Show the column title in bold.'),
             },
           },
         ],
