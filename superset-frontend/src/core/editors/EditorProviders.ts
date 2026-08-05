@@ -20,6 +20,7 @@
 import type { editors } from '@apache-superset/core';
 import { Disposable } from '../models';
 import { createEventEmitter } from '../utils';
+import { SelectableRegistry } from '../registry';
 
 type EditorLanguage = editors.EditorLanguage;
 type EditorProvider = editors.EditorProvider;
@@ -32,20 +33,25 @@ type Listener<T> = (e: T) => void;
 
 /**
  * Singleton manager for editor providers.
- * Handles registration, resolution, and lifecycle of custom editor implementations.
+ *
+ * Editors are an augmentable contribution point: the built-in editor occupies
+ * the default tier per language and extensions add providers alongside it, so
+ * a user selection can decide which one renders. Resolution is owned by a
+ * {@link SelectableRegistry} per language rather than by a host code branch.
  */
 class EditorProviders {
   private static instance: EditorProviders;
 
   /**
-   * Map of provider ID to EditorProvider.
+   * Map of provider ID to EditorProvider, covering both tiers.
    */
   private providers: Map<string, EditorProvider> = new Map();
 
   /**
-   * Map of language to provider ID for quick lookups.
+   * Per-language resolution, owning the default and override tiers.
    */
-  private languageToProvider: Map<EditorLanguage, string> = new Map();
+  private registries: Map<EditorLanguage, SelectableRegistry<EditorProvider>> =
+    new Map();
 
   private registerEmitter = createEventEmitter<EditorRegisteredEvent>();
 
@@ -78,9 +84,44 @@ class EditorProviders {
     return EditorProviders.instance;
   }
 
+  private notify(): void {
+    this.syncListeners.forEach(l => l());
+  }
+
+  private registryFor(
+    language: EditorLanguage,
+  ): SelectableRegistry<EditorProvider> {
+    let registry = this.registries.get(language);
+    if (!registry) {
+      registry = new SelectableRegistry<EditorProvider>(() => this.notify());
+      this.registries.set(language, registry);
+    }
+    return registry;
+  }
+
   /**
-   * Register an editor provider.
-   * When registered, the provider replaces the default editor for its supported languages.
+   * Register the built-in editor as the default provider for its languages.
+   *
+   * Host-internal and idempotent by id: it is deliberately not exposed on
+   * `window.superset`, and it is independent of the extensions feature flag
+   * and the extensions loader so that core surfaces always render.
+   *
+   * @param editor The editor descriptor, using a reserved `superset.` id.
+   * @param component The React component implementing the editor.
+   */
+  public setDefaultProvider(editor: Editor, component: EditorComponent): void {
+    const provider: EditorProvider = { editor, component };
+    this.providers.set(editor.id, provider);
+    editor.languages.forEach(language => {
+      this.registryFor(language).setDefaultProvider(editor.id, provider);
+    });
+  }
+
+  /**
+   * Register an editor provider alongside the built-in default.
+   *
+   * The most recently registered provider is active for its languages until a
+   * selection is made; disposing it falls back through the registry.
    *
    * @param editor The editor descriptor.
    * @param component The React component implementing the editor.
@@ -104,75 +145,103 @@ class EditorProviders {
       component,
     };
 
-    // Register the provider
     this.providers.set(id, provider);
 
-    // Map languages to this provider
-    languages.forEach(language => {
-      this.languageToProvider.set(language, id);
-    });
+    const disposables = languages.map(language =>
+      this.registryFor(language).registerProvider(id, provider),
+    );
 
     // Fire registration event
     this.registerEmitter.fire({ editor });
-    this.syncListeners.forEach(l => l());
+    this.notify();
 
     // Return disposable for cleanup
     return new Disposable(() => {
-      this.unregisterProvider(id);
-    });
-  }
-
-  /**
-   * Unregister an editor provider by ID.
-   * @param id The provider ID to unregister.
-   */
-  private unregisterProvider(id: string): void {
-    const provider = this.providers.get(id);
-    if (!provider) {
-      return;
-    }
-
-    const { editor } = provider;
-
-    // Remove language mappings for this provider
-    editor.languages.forEach(language => {
-      if (this.languageToProvider.get(language) === id) {
-        this.languageToProvider.delete(language);
+      if (this.providers.get(id) !== provider) {
+        return;
       }
+      this.providers.delete(id);
+      disposables.forEach(disposable => disposable.dispose());
+      this.unregisterEmitter.fire({ editor });
+      this.notify();
     });
-
-    // Remove the provider
-    this.providers.delete(id);
-
-    // Fire unregistration event
-    this.unregisterEmitter.fire({ editor });
-    this.syncListeners.forEach(l => l());
   }
 
   /**
-   * Get the editor provider for a specific language.
+   * Get the active editor provider for a language: the extension provider when
+   * one is registered, otherwise the built-in default.
    * @param language The language to get a provider for.
-   * @returns The provider or undefined if none is registered.
+   * @returns The active provider, or undefined if the language has none.
    */
   public getProvider(language: EditorLanguage): EditorProvider | undefined {
-    const providerId = this.languageToProvider.get(language);
-    if (!providerId) {
-      return undefined;
-    }
-    return this.providers.get(providerId);
+    return this.registries.get(language)?.getActive();
   }
 
   /**
-   * Check if a provider is registered for a language.
+   * Get the built-in provider for a language, ignoring extensions.
+   */
+  public getDefaultProvider(
+    language: EditorLanguage,
+  ): EditorProvider | undefined {
+    return this.registries.get(language)?.getDefault();
+  }
+
+  /**
+   * Get the extension provider active for a language, if any.
+   */
+  public getOverrideProvider(
+    language: EditorLanguage,
+  ): EditorProvider | undefined {
+    return this.registries.get(language)?.getOverride();
+  }
+
+  /**
+   * Get every provider available for a language, the default first.
+   */
+  public getProvidersForLanguage(language: EditorLanguage): EditorProvider[] {
+    return (
+      this.registries
+        .get(language)
+        ?.getAll()
+        .map(entry => entry.provider) ?? []
+    );
+  }
+
+  /**
+   * Get the id of the provider selected for a language, if any.
+   */
+  public getSelectedProvider(language: EditorLanguage): string | undefined {
+    return this.registries.get(language)?.getSelection();
+  }
+
+  /**
+   * Select which of the available providers renders for a language.
+   */
+  public setSelectedProvider(
+    language: EditorLanguage,
+    id: string | undefined,
+  ): void {
+    this.registries.get(language)?.setSelection(id);
+  }
+
+  /**
+   * Check if a provider is available for a language.
    * @param language The language to check.
-   * @returns True if a provider is registered.
+   * @returns True if an editor renders for this language.
    */
   public hasProvider(language: EditorLanguage): boolean {
-    return this.languageToProvider.has(language);
+    return this.getProvider(language) !== undefined;
   }
 
   /**
-   * Get all registered providers.
+   * Check if an extension has overridden the built-in editor for a language.
+   */
+  public hasOverride(language: EditorLanguage): boolean {
+    return this.getOverrideProvider(language) !== undefined;
+  }
+
+  /**
+   * Get all registered providers, across both tiers.
    * @returns Array of all registered providers.
    */
   public getAllProviders(): EditorProvider[] {
@@ -204,11 +273,11 @@ class EditorProviders {
   }
 
   /**
-   * Reset the manager state (for testing purposes).
+   * Reset the manager state. Intended for tests.
    */
   public reset(): void {
     this.providers.clear();
-    this.languageToProvider.clear();
+    this.registries.clear();
     this.syncListeners.clear();
     this.registerEmitter = createEventEmitter<EditorRegisteredEvent>();
     this.unregisterEmitter = createEventEmitter<EditorUnregisteredEvent>();

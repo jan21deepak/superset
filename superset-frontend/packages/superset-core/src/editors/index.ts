@@ -574,7 +574,9 @@ export interface EditorUnregisteredEvent {
 /**
  * Registers a custom editor provider as a module-level side effect.
  *
- * When an extension registers an editor, it replaces the default for those languages.
+ * The registered editor becomes the active one for those languages, alongside
+ * the built-in editor which occupies the default tier of this contribution
+ * point. Disposing the registration falls back to the built-in editor.
  *
  * @param editor The editor descriptor including id, name, and languages.
  * @param component The React component implementing the editor.
@@ -594,26 +596,52 @@ export declare function registerEditor(
 ): Disposable;
 
 /**
- * Get the editor provider for a specific language.
- * Returns the extension's editor if registered, otherwise undefined.
+ * Get the active editor provider for a specific language: the extension's
+ * editor when one is registered, otherwise the built-in editor.
+ *
+ * To detect whether an extension has replaced the built-in editor, use
+ * {@link getOverrideEditor} rather than comparing this result to `undefined`.
  *
  * @param language The language to get an editor for
- * @returns The editor provider or undefined if no extension provides one
+ * @returns The active editor provider, or undefined if the language has none
  */
 export declare function getEditor(
   language: EditorLanguage,
 ): EditorProvider | undefined;
 
 /**
- * Check if an extension has registered an editor for a language.
+ * Get the built-in editor provider for a language, ignoring extensions.
+ *
+ * Useful to augment rather than replace the built-in editor, for example by
+ * wrapping it in additional chrome.
+ *
+ * @param language The language to get the built-in editor for
+ * @returns The built-in editor provider, or undefined if there is none
+ */
+export declare function getDefaultEditor(
+  language: EditorLanguage,
+): EditorProvider | undefined;
+
+/**
+ * Get the editor provider an extension registered for a language, if any.
+ *
+ * @param language The language to get the extension editor for
+ * @returns The extension's editor provider, or undefined if none is registered
+ */
+export declare function getOverrideEditor(
+  language: EditorLanguage,
+): EditorProvider | undefined;
+
+/**
+ * Check if an editor is available for a language, from either tier.
  *
  * @param language The language to check
- * @returns True if an extension provides an editor for this language
+ * @returns True if an editor renders for this language
  */
 export declare function hasEditor(language: EditorLanguage): boolean;
 
 /**
- * Get all registered editor providers.
+ * Get all registered editor providers, including the built-in ones.
  *
  * @returns Array of all registered editor providers
  */

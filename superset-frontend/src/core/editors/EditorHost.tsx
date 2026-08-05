@@ -20,17 +20,17 @@
 /**
  * @fileoverview EditorHost component for dynamic editor resolution.
  *
- * This component resolves and renders the appropriate editor implementation
- * based on the language and any registered extension providers. If an extension
- * has registered an editor for the language, it uses that; otherwise, it falls
- * back to the default Ace editor.
+ * The component renders whichever provider the `editors` contribution point
+ * resolves as active for the language. Resolution, including the fallback to
+ * the built-in editor, is owned by the registry, so the host has a single code
+ * path for built-in and extension editors alike.
  */
 
 import { useSyncExternalStore, forwardRef } from 'react';
 import type { editors } from '@apache-superset/core';
 import { useTheme } from '@apache-superset/core/theme';
 import EditorProviders from './EditorProviders';
-import AceEditorProvider from './AceEditorProvider';
+import './registerDefaults';
 
 type EditorProps = editors.EditorProps;
 type EditorHandle = editors.EditorHandle;
@@ -45,8 +45,8 @@ export type EditorHostProps = EditorProps;
  * EditorHost component that dynamically resolves and renders the appropriate editor.
  *
  * This component serves as the main entry point for rendering editors in Superset.
- * It checks if an extension has registered a custom editor for the requested language
- * and uses that if available; otherwise, it falls back to the default Ace editor.
+ * It renders the active provider for the requested language: an extension's
+ * editor when one is registered, otherwise the built-in default.
  *
  * @example
  * ```tsx
@@ -63,23 +63,19 @@ const EditorHost = forwardRef<EditorHandle, EditorHostProps>((props, ref) => {
   const { language } = props;
   const theme = useTheme();
   const manager = EditorProviders.getInstance();
+  const getProvider = () => manager.getProvider(language);
   const provider = useSyncExternalStore(
     manager.subscribe,
-    () => manager.getProvider(language),
-    () => undefined,
+    getProvider,
+    getProvider,
   );
 
-  // Merge theme into props
-  const propsWithTheme = { ...props, theme };
-
-  // Use extension-provided editor if available
-  if (provider) {
-    const EditorComponent = provider.component;
-    return <EditorComponent ref={ref} {...propsWithTheme} />;
+  if (!provider) {
+    return null;
   }
 
-  // Fall back to default Ace editor
-  return <AceEditorProvider ref={ref} {...propsWithTheme} />;
+  const EditorComponent = provider.component;
+  return <EditorComponent ref={ref} {...props} theme={theme} />;
 });
 
 EditorHost.displayName = 'EditorHost';
