@@ -370,6 +370,7 @@ def test_validate_session_guest_user_creates_valid_token(async_query_manager):
 
 
 def _app_with_request_handlers(async_query_manager):
+    """Build a Flask app whose responses run the async-token request handlers."""
     from flask import Flask
 
     async_query_manager._jwt_cookie_secure = False
@@ -389,6 +390,7 @@ def _app_with_request_handlers(async_query_manager):
 
 
 def _issued_token(response):
+    """Return the async JWT set by a response, or ``None`` if it set none."""
     cookie_header = [
         v
         for k, v in response.headers
