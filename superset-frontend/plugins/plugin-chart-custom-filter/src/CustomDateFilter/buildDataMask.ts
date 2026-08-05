@@ -18,29 +18,41 @@
  */
 import { DataMask, QueryObjectFilterClause } from '@superset-ui/core';
 
+// A date-only bound (no time component) is compared as midnight of that day.
+// Extend the end of a day-only range to the last second so `<=`/`==` stays
+// inclusive of the whole day for timestamp columns.
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const isDateOnly = (value: string): boolean => DATE_ONLY.test(value);
+const toInclusiveEnd = (value: string): string =>
+  isDateOnly(value) ? `${value} 23:59:59` : value;
+
 /**
  * Build a cross-filter data mask for a single date selection.
+ *
+ * A bare date on a timestamp column would only match midnight with `==`, so a
+ * day-only selection is expanded to a `>= day start`, `<= day end` pair while
+ * an explicit timestamp keeps strict equality.
  */
 export function buildSingleDateMask(
   column: string,
   dateStr: string | null,
 ): DataMask {
   const isEmpty = !dateStr || dateStr.trim() === '';
-  const filters: QueryObjectFilterClause[] = isEmpty
-    ? []
-    : [{ col: column, op: '==', val: dateStr as string }];
+  let filters: QueryObjectFilterClause[] = [];
+  if (!isEmpty) {
+    const value = dateStr as string;
+    filters = isDateOnly(value)
+      ? [
+          { col: column, op: '>=', val: value },
+          { col: column, op: '<=', val: toInclusiveEnd(value) },
+        ]
+      : [{ col: column, op: '==', val: value }];
+  }
   return {
     extraFormData: { filters },
     filterState: { value: isEmpty ? null : dateStr },
   };
 }
-
-// A date-only end bound (no time component) is compared as midnight of that
-// day, which would exclude rows recorded later on the final day. Extend it to
-// the end of the day so the range stays inclusive for timestamp columns.
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-const toInclusiveEnd = (value: string): string =>
-  DATE_ONLY.test(value) ? `${value} 23:59:59` : value;
 
 /**
  * Build a cross-filter data mask for a date range selection.

@@ -21,12 +21,21 @@ import {
   buildSingleDateMask,
 } from '../../src/CustomDateFilter/buildDataMask';
 
-test('single date mask emits an equality clause', () => {
+test('single date-only selection spans the whole day', () => {
   const mask = buildSingleDateMask('order_date', '2021-01-01');
   expect(mask.extraFormData?.filters).toEqual([
-    { col: 'order_date', op: '==', val: '2021-01-01' },
+    { col: 'order_date', op: '>=', val: '2021-01-01' },
+    { col: 'order_date', op: '<=', val: '2021-01-01 23:59:59' },
   ]);
   expect(mask.filterState?.value).toBe('2021-01-01');
+});
+
+test('single timestamp selection uses strict equality', () => {
+  const mask = buildSingleDateMask('order_date', '2021-01-01 08:30:00');
+  expect(mask.extraFormData?.filters).toEqual([
+    { col: 'order_date', op: '==', val: '2021-01-01 08:30:00' },
+  ]);
+  expect(mask.filterState?.value).toBe('2021-01-01 08:30:00');
 });
 
 test('empty single date clears the cross filter', () => {

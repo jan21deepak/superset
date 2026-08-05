@@ -32,6 +32,7 @@ test('groups by the configured filter column', () => {
   });
   expect(queries[0].groupby).toEqual(['country']);
   expect(queries[0].metrics).toEqual([]);
+  expect(queries[0].row_limit).toBe(1000);
 });
 
 test('emits no groupby when no filter column is set', () => {
