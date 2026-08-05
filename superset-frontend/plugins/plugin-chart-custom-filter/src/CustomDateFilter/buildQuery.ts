@@ -20,13 +20,16 @@ import { buildQueryContext } from '@superset-ui/core';
 import { CustomDateFilterFormData } from './types';
 
 // The date picker is purely client-side, so the query results are never read.
-// Keep it minimal to satisfy the chart-data contract without scanning the
+// The backend rejects a query with no metrics/columns/groupby ("Empty query?"),
+// so group by the configured column but cap the row limit to avoid scanning the
 // underlying table.
 export default function buildQuery(formData: CustomDateFilterFormData) {
+  const { filterColumn } = formData;
+
   return buildQueryContext(formData, baseQueryObject => [
     {
       ...baseQueryObject,
-      groupby: [],
+      groupby: filterColumn ? [filterColumn] : [],
       metrics: [],
       row_limit: 1,
     },

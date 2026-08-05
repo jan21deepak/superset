@@ -35,13 +35,25 @@ test('empty single date clears the cross filter', () => {
   expect(mask.filterState?.value).toBeNull();
 });
 
-test('range mask emits two bound clauses instead of BETWEEN', () => {
+test('range mask emits two bound clauses with an inclusive end of day', () => {
   const mask = buildRangeDateMask('order_date', '2021-01-01', '2021-01-31');
   expect(mask.extraFormData?.filters).toEqual([
     { col: 'order_date', op: '>=', val: '2021-01-01' },
-    { col: 'order_date', op: '<=', val: '2021-01-31' },
+    { col: 'order_date', op: '<=', val: '2021-01-31 23:59:59' },
   ]);
   expect(mask.filterState?.value).toEqual(['2021-01-01', '2021-01-31']);
+});
+
+test('range mask keeps an explicit end timestamp untouched', () => {
+  const mask = buildRangeDateMask(
+    'order_date',
+    '2021-01-01 08:00:00',
+    '2021-01-31 17:30:00',
+  );
+  expect(mask.extraFormData?.filters).toEqual([
+    { col: 'order_date', op: '>=', val: '2021-01-01 08:00:00' },
+    { col: 'order_date', op: '<=', val: '2021-01-31 17:30:00' },
+  ]);
 });
 
 test('incomplete range clears the cross filter', () => {

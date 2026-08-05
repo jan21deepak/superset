@@ -156,9 +156,11 @@ export default function CustomControls(props: CustomControlsTransformedProps) {
         }
       }
 
+      // Keep the "All" sentinel in filterState so the control still shows the
+      // user's selection; only a genuinely empty selection clears it.
       const dataMask: DataMask = {
         extraFormData: { filters },
-        filterState: { value: isEmpty ? null : value },
+        filterState: { value: isEmpty && !isAllSelected ? null : value },
       };
       setDataMask(dataMask);
     },

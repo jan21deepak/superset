@@ -35,6 +35,13 @@ export function buildSingleDateMask(
   };
 }
 
+// A date-only end bound (no time component) is compared as midnight of that
+// day, which would exclude rows recorded later on the final day. Extend it to
+// the end of the day so the range stays inclusive for timestamp columns.
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const toInclusiveEnd = (value: string): string =>
+  DATE_ONLY.test(value) ? `${value} 23:59:59` : value;
+
 /**
  * Build a cross-filter data mask for a date range selection.
  *
@@ -52,7 +59,7 @@ export function buildRangeDateMask(
     ? []
     : [
         { col: column, op: '>=', val: startStr as string },
-        { col: column, op: '<=', val: endStr as string },
+        { col: column, op: '<=', val: toInclusiveEnd(endStr as string) },
       ];
   return {
     extraFormData: { filters },
