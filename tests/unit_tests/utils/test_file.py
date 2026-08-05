@@ -16,7 +16,7 @@
 # under the License.
 import pytest
 
-from superset.utils.file import get_filename, sanitize_title
+from superset.utils.file import get_filename, MAX_FILENAME_LENGTH, sanitize_title
 
 
 @pytest.mark.parametrize(
@@ -37,6 +37,10 @@ from superset.utils.file import get_filename, sanitize_title
         ("Energy\x08Sankey", 132, False, "EnergySankey_132"),
         ("Energy\x08Sankey", 132, True, "EnergySankey"),
         ("Sales\x7fReport", 1, False, "SalesReport_1"),
+        ("a" * 250, 132, False, "a" * MAX_FILENAME_LENGTH + "_132"),
+        ("a" * 250, 132, True, "a" * MAX_FILENAME_LENGTH),
+        # truncation must not leave a trailing separator
+        ("a" * (MAX_FILENAME_LENGTH - 1) + " b", 132, False, "a" * 99 + "_132"),
     ],
 )
 def test_get_filename(
