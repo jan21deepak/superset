@@ -46,12 +46,22 @@ const getCrossFilterDataMask =
     labelMap: Record<string, string[]>,
   ) =>
   (value: string) => {
+    if (!value) {
+      return undefined;
+    }
     const selected = Object.values(selectedValues);
     let values: string[];
     if (selected.includes(value)) {
       values = selected.filter(v => v !== value);
     } else {
       values = [value];
+    }
+
+    // Bail out when any selected value cannot be resolved to a real groupby
+    // value (e.g. the pie "Total" text or "Other" slice), so we never emit a
+    // cross-filter with no valid dimension values.
+    if (values.some(v => !labelMap[v])) {
+      return undefined;
     }
 
     const groupbyValues = values
