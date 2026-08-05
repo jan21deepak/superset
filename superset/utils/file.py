@@ -23,6 +23,12 @@ from werkzeug.utils import secure_filename
 # SMTP headers, Content-Disposition filenames, and headless-browser document.title.
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
+# Maximum length of the model name portion of an exported file name. Exported
+# ZIP entries are nested (``<root>/<folder>/<name>_<id>.yaml``) and the whole
+# extracted path is bound by the legacy Windows MAX_PATH limit of 260
+# characters, so long model names have to be truncated to stay extractable.
+MAX_FILENAME_LENGTH = 100
+
 
 def sanitize_title(title: str) -> str:
     """Remove all C0/C1 control characters from a title string."""
@@ -31,6 +37,6 @@ def sanitize_title(title: str) -> str:
 
 def get_filename(model_name: str, model_id: int, skip_id: bool = False) -> str:
     model_name = sanitize_title(model_name)
-    slug = secure_filename(model_name)
+    slug = secure_filename(model_name)[:MAX_FILENAME_LENGTH].strip("._")
     filename = slug if skip_id else f"{slug}_{model_id}"
     return filename if slug else str(model_id)
