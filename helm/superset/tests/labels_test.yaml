@@ -542,7 +542,6 @@ tests:
     template: pdb.yaml
     set:
       supersetNode.podDisruptionBudget.enabled: true
-      supersetNode.podDisruptionBudget.maxUnavailable: null
     asserts:
       - equal:
           path: metadata.labels["app.kubernetes.io/instance"]
@@ -561,7 +560,6 @@ tests:
     template: pdb-worker.yaml
     set:
       supersetWorker.podDisruptionBudget.enabled: true
-      supersetWorker.podDisruptionBudget.maxUnavailable: null
     asserts:
       - equal:
           path: metadata.labels["app.kubernetes.io/component"]
@@ -574,7 +572,6 @@ tests:
     template: pdb-beat.yaml
     set:
       supersetCeleryBeat.podDisruptionBudget.enabled: true
-      supersetCeleryBeat.podDisruptionBudget.maxUnavailable: null
     asserts:
       - equal:
           path: metadata.labels["app.kubernetes.io/component"]
@@ -584,7 +581,6 @@ tests:
     template: pdb-flower.yaml
     set:
       supersetCeleryFlower.podDisruptionBudget.enabled: true
-      supersetCeleryFlower.podDisruptionBudget.maxUnavailable: null
     asserts:
       - equal:
           path: metadata.labels["app.kubernetes.io/component"]
@@ -595,7 +591,6 @@ tests:
     set:
       supersetWebsockets.enabled: true
       supersetWebsockets.podDisruptionBudget.enabled: true
-      supersetWebsockets.podDisruptionBudget.maxUnavailable: null
     asserts:
       - equal:
           path: metadata.labels["app.kubernetes.io/component"]
@@ -609,7 +604,6 @@ tests:
     set:
       supersetMcp.enabled: true
       supersetMcp.podDisruptionBudget.enabled: true
-      supersetMcp.podDisruptionBudget.maxUnavailable: null
     asserts:
       - equal:
           path: metadata.labels["app.kubernetes.io/instance"]
