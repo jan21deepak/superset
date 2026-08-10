@@ -304,4 +304,40 @@ pre-commit run eslint            # Frontend linting
 
 ---
 
+## Cursor Cloud specific instructions
+
+This section captures non-obvious, durable setup notes for the Cursor Cloud "on metal" dev
+environment (SQLite metadata DB, no Docker). The startup update script already refreshes the
+Python venv and frontend `node_modules`; you normally only need to start services.
+
+### Activating the environment
+- Python deps live in a venv at `venv/`. Activate it first: `source venv/bin/activate`.
+- The backend needs `FLASK_APP` set: `export FLASK_APP="superset.app:create_app()"` (already in `.flaskenv`).
+- Frontend requires **Node 24** (`superset-frontend/.nvmrc` = `v24.16.0`). A different Node
+  (`/exec-daemon/node`, v22) appears earlier in `PATH` and shadows nvm, so `nvm use` alone is not
+  enough. Prepend Node 24 explicitly before running any frontend command:
+  `export PATH="$HOME/.nvm/versions/node/v24.16.0/bin:$PATH"` (this is also appended to `~/.bashrc`).
+
+### Running the services (use tmux/background; do not block)
+- Backend (REST API + server) on port 8088: `superset run -p 8088 --with-threads --reload --debugger`.
+  Health check: `curl http://localhost:8088/health` → `OK`.
+- Frontend webpack dev-server on port 9000 (proxies API to 8088; this is the URL you open):
+  `cd superset-frontend && npm run dev-server`. First compile takes ~30s.
+- Standard run/lint/test commands are documented in the "Running Tests" section above and in
+  `superset-frontend/package.json` / `Makefile`; don't duplicate them here.
+
+### Non-obvious gotchas
+- The webpack dev-server's proxy uses `simple-zstd`, which shells out to a system `zstd` binary.
+  If it fails with "Can not access zstd! Is it installed?", the OS package `zstd` is missing.
+- Frontend lint is **oxlint** via `npm run lint` (NOT a global `eslint`; a globally-resolved
+  `eslint` will error about a missing `eslint.config.js`). Type-check with `npm run type`.
+- The backend `--reload` watcher recursively watches the `venv/`, which floods `FLASK_DEBUG` logs
+  with `watchdog`/inotify lines. This is harmless noise; drop `--reload` for quieter logs.
+- The SQLite metadata DB (`~/.superset/superset.db`) is already initialized in the snapshot: admin
+  user `admin` / password `general`, roles created (`superset init`), and example datasets/dashboards
+  loaded. You do NOT need to re-run `superset db upgrade` / `superset init` / `superset load-examples`
+  for a normal start.
+
+---
+
 **LLM Note**: This codebase is actively modernizing toward full TypeScript and type safety. Always run `pre-commit run` to validate changes. Follow the ongoing refactors section to avoid deprecated patterns.
