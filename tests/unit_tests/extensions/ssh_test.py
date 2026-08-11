@@ -14,6 +14,8 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import time
+from collections.abc import Generator
 from unittest.mock import Mock, patch
 
 import paramiko
@@ -41,10 +43,25 @@ from paramiko import (
 from superset.commands.database.ssh_tunnel.exceptions import (
     SSHTunnelHostKeyVerificationError,
 )
-from superset.extensions.ssh import SSHManager, SSHManagerFactory
+from superset.extensions.ssh import (
+    _TUNNEL_POOL,
+    _TUNNEL_POOL_LOCK,
+    evict_tunnels_for_database,
+    SSHManager,
+    SSHManagerFactory,
+)
 
 
-def _make_manager(strict: bool = False) -> SSHManager:
+@pytest.fixture(autouse=True)
+def clear_tunnel_pool() -> Generator[None, None, None]:
+    with _TUNNEL_POOL_LOCK:
+        _TUNNEL_POOL.clear()
+    yield
+    with _TUNNEL_POOL_LOCK:
+        _TUNNEL_POOL.clear()
+
+
+def _make_manager(strict: bool = False, *, pool_enabled: bool = False) -> SSHManager:
     """Build an ``SSHManager`` test instance with configurable strict checking."""
     app = Mock()
     app.config = {
@@ -54,12 +71,17 @@ def _make_manager(strict: bool = False) -> SSHManager:
         "SSH_TUNNEL_PACKET_TIMEOUT_SEC": 321.0,
         "SSH_TUNNEL_MANAGER_CLASS": "superset.extensions.ssh.SSHManager",
         "SSH_TUNNEL_STRICT_HOST_KEY_CHECKING": strict,
+        "SSH_TUNNEL_POOL_ENABLED": pool_enabled,
+        "SSH_TUNNEL_POOL_IDLE_SEC": 0.01,
     }
     return SSHManager(app)
 
 
 def _make_ssh_tunnel(private_key: str, private_key_password: str | None = None) -> Mock:
     ssh_tunnel = Mock()
+    ssh_tunnel.database_id = 1
+    ssh_tunnel.changed_on = None
+    ssh_tunnel.id = 1
     ssh_tunnel.server_address = "ssh.example.com"
     ssh_tunnel.server_port = 22
     ssh_tunnel.username = "tunneluser"
@@ -80,6 +102,9 @@ def _authorized_key(key: paramiko.PKey) -> str:
 def _ssh_tunnel(server_host_key: str | None) -> Mock:
     """Create a mocked SSH tunnel with server connection fields populated."""
     tunnel = Mock()
+    tunnel.database_id = 1
+    tunnel.changed_on = None
+    tunnel.id = 1
     tunnel.server_address = "ssh.example.com"
     tunnel.server_port = 22
     tunnel.server_host_key = server_host_key
@@ -443,3 +468,84 @@ def test_ssh_tunnel_schema_round_trips_server_host_key() -> None:
     }
     loaded = DatabaseSSHTunnel().load(payload)
     assert loaded["server_host_key"] == authorized
+
+
+def test_pooled_tunnel_reuses_ssh_connection() -> None:
+    """Regression for #41745: pooled tunnels reuse the same SSH connection."""
+    manager = _make_manager(pool_enabled=True)
+    ssh_tunnel = _make_ssh_tunnel(_make_ed25519_pem())
+    uri = "postgresql://user:pass@db.example.com:5432/x"
+
+    mock_forwarder = Mock()
+    mock_forwarder.is_active = True
+    mock_forwarder.local_bind_address = ("127.0.0.1", 54321)
+
+    with patch("superset.extensions.ssh.sshtunnel.open_tunnel") as mock_open:
+        mock_open.return_value = mock_forwarder
+        with manager.create_tunnel(ssh_tunnel, uri):
+            pass
+        with manager.create_tunnel(ssh_tunnel, uri):
+            pass
+
+    assert mock_open.call_count == 1
+    assert mock_forwarder.start.call_count == 1
+
+
+def test_pooled_tunnel_evicted_for_database() -> None:
+    manager = _make_manager(pool_enabled=True)
+    ssh_tunnel = _make_ssh_tunnel(_make_ed25519_pem())
+    uri = "postgresql://user:pass@db.example.com:5432/x"
+
+    mock_forwarder = Mock()
+    mock_forwarder.is_active = True
+    mock_forwarder.local_bind_address = ("127.0.0.1", 54321)
+
+    with patch("superset.extensions.ssh.sshtunnel.open_tunnel") as mock_open:
+        mock_open.return_value = mock_forwarder
+        with manager.create_tunnel(ssh_tunnel, uri):
+            pass
+
+        assert len(_TUNNEL_POOL) == 1
+        evict_tunnels_for_database(1)
+        assert len(_TUNNEL_POOL) == 0
+        mock_forwarder.stop.assert_called_once_with(force=True)
+
+        with manager.create_tunnel(ssh_tunnel, uri):
+            pass
+
+    assert mock_open.call_count == 2
+
+
+def test_pooled_tunnel_closed_after_idle_timeout() -> None:
+    manager = _make_manager(pool_enabled=True)
+    ssh_tunnel = _make_ssh_tunnel(_make_ed25519_pem())
+    uri = "postgresql://user:pass@db.example.com:5432/x"
+
+    mock_forwarder = Mock()
+    mock_forwarder.is_active = True
+    mock_forwarder.local_bind_address = ("127.0.0.1", 54321)
+
+    with patch("superset.extensions.ssh.sshtunnel.open_tunnel") as mock_open:
+        mock_open.return_value = mock_forwarder
+        with manager.create_tunnel(ssh_tunnel, uri):
+            pass
+
+        assert len(_TUNNEL_POOL) == 1
+        time.sleep(0.02)
+        with manager.create_tunnel(ssh_tunnel, uri):
+            pass
+
+    assert mock_open.call_count == 2
+    assert mock_forwarder.stop.call_count == 1
+
+
+def test_pool_disabled_opens_new_tunnel_each_time() -> None:
+    manager = _make_manager(pool_enabled=False)
+    ssh_tunnel = _make_ssh_tunnel(_make_ed25519_pem())
+    uri = "postgresql://user:pass@db.example.com:5432/x"
+
+    with patch("superset.extensions.ssh.sshtunnel.open_tunnel") as mock_open:
+        manager.create_tunnel(ssh_tunnel, uri)
+        manager.create_tunnel(ssh_tunnel, uri)
+
+    assert mock_open.call_count == 2

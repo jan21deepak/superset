@@ -19,8 +19,12 @@ import base64
 import binascii
 import logging
 import socket
+import threading
+import time
+from contextlib import AbstractContextManager
+from dataclasses import dataclass, field
 from io import StringIO
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import paramiko
 import sshtunnel
@@ -46,6 +50,46 @@ if TYPE_CHECKING:
     from superset.databases.ssh_tunnel.models import SSHTunnel
 
 logger = logging.getLogger(__name__)
+
+# Per-process SSH tunnel pool (#41745). Reuses SSH connections across requests
+# instead of opening a new tunnel for every query.
+_TUNNEL_POOL: dict[tuple[Any, ...], "_PooledTunnelEntry"] = {}
+_TUNNEL_POOL_LOCK = threading.Lock()
+
+
+@dataclass
+class _PooledTunnelEntry:
+    tunnel: sshtunnel.SSHTunnelForwarder
+    ref_count: int = 0
+    last_released_at: float = field(default_factory=time.monotonic)
+
+
+class _PooledSSHTunnelContext(AbstractContextManager[sshtunnel.SSHTunnelForwarder]):
+    """Acquire a pooled SSH tunnel on enter; release (not close) on exit."""
+
+    def __init__(
+        self,
+        manager: "SSHManager",
+        ssh_tunnel: "SSHTunnel",
+        sqlalchemy_database_uri: str,
+    ) -> None:
+        self._manager = manager
+        self._ssh_tunnel = ssh_tunnel
+        self._sqlalchemy_database_uri = sqlalchemy_database_uri
+        self._cache_key: tuple[Any, ...] | None = None
+        self._tunnel: sshtunnel.SSHTunnelForwarder | None = None
+
+    def __enter__(self) -> sshtunnel.SSHTunnelForwarder:
+        self._tunnel, self._cache_key = self._manager._acquire_tunnel(
+            self._ssh_tunnel,
+            self._sqlalchemy_database_uri,
+        )
+        return self._tunnel
+
+    def __exit__(self, *args: object) -> None:
+        if self._cache_key is not None:
+            self._manager._release_tunnel(self._cache_key)
+
 
 # Order matters: paramiko's per-class loaders raise SSHException with vague
 # "unpack requires 4 bytes" messages on type mismatches, so we try the more
@@ -112,6 +156,8 @@ class SSHManager:
         self.strict_host_key_checking = app.config.get(
             "SSH_TUNNEL_STRICT_HOST_KEY_CHECKING", False
         )
+        self.pool_enabled = app.config.get("SSH_TUNNEL_POOL_ENABLED", True)
+        self.pool_idle_sec = app.config.get("SSH_TUNNEL_POOL_IDLE_SEC", 300.0)
         sshtunnel.TUNNEL_TIMEOUT = app.config["SSH_TUNNEL_TIMEOUT_SEC"]
         sshtunnel.SSH_TIMEOUT = app.config["SSH_TUNNEL_PACKET_TIMEOUT_SEC"]
 
@@ -206,14 +252,35 @@ class SSHManager:
 
         return expected_key
 
-    def create_tunnel(
+    def _tunnel_cache_key(
         self,
         ssh_tunnel: "SSHTunnel",
         sqlalchemy_database_uri: str,
-    ) -> sshtunnel.SSHTunnelForwarder:
+    ) -> tuple[Any, ...]:
         # Deferred import to break a circular import:
         # superset.utils.ssh_tunnel -> superset.databases.ssh_tunnel.models
         # -> superset.extensions -> superset.extensions.ssh (this module).
+        from superset.utils.ssh_tunnel import get_default_port
+
+        url = make_url_safe(sqlalchemy_database_uri)
+        backend = url.get_backend_name()
+        port = url.port or get_default_port(backend)
+        return (
+            ssh_tunnel.database_id,
+            ssh_tunnel.server_address,
+            ssh_tunnel.server_port,
+            ssh_tunnel.username,
+            url.host,
+            port,
+            # Invalidate the pool entry when tunnel credentials or host key change.
+            str(ssh_tunnel.changed_on) if ssh_tunnel.changed_on else ssh_tunnel.id,
+        )
+
+    def _build_tunnel_params(
+        self,
+        ssh_tunnel: "SSHTunnel",
+        sqlalchemy_database_uri: str,
+    ) -> dict[str, Any]:
         from superset.utils.ssh_tunnel import get_default_port
 
         url = make_url_safe(sqlalchemy_database_uri)
@@ -227,7 +294,7 @@ class SSHManager:
         # connection below.
         expected_host_key = self._verify_host_key(ssh_tunnel)
 
-        params = {
+        params: dict[str, Any] = {
             "ssh_address_or_host": (ssh_tunnel.server_address, ssh_tunnel.server_port),
             "ssh_username": ssh_tunnel.username,
             "remote_bind_address": (url.host, port),
@@ -250,17 +317,150 @@ class SSHManager:
                 ssh_tunnel.private_key, ssh_tunnel.private_key_password
             )
 
-        return sshtunnel.open_tunnel(**params)
+        return params
+
+    def _open_new_tunnel(
+        self,
+        ssh_tunnel: "SSHTunnel",
+        sqlalchemy_database_uri: str,
+    ) -> sshtunnel.SSHTunnelForwarder:
+        tunnel = sshtunnel.open_tunnel(
+            **self._build_tunnel_params(ssh_tunnel, sqlalchemy_database_uri)
+        )
+        tunnel.start()
+        return tunnel
+
+    def _acquire_tunnel(
+        self,
+        ssh_tunnel: "SSHTunnel",
+        sqlalchemy_database_uri: str,
+    ) -> tuple[sshtunnel.SSHTunnelForwarder, tuple[Any, ...]]:
+        cache_key = self._tunnel_cache_key(ssh_tunnel, sqlalchemy_database_uri)
+        with _TUNNEL_POOL_LOCK:
+            self._cleanup_idle_tunnels()
+            entry = _TUNNEL_POOL.get(cache_key)
+            if entry is not None and entry.tunnel.is_active:
+                entry.ref_count += 1
+                logger.debug(
+                    "[SSH] Reusing pooled tunnel for database_id=%s (ref_count=%s)",
+                    ssh_tunnel.database_id,
+                    entry.ref_count,
+                )
+                return entry.tunnel, cache_key
+            if entry is not None:
+                self._close_tunnel_entry(cache_key, entry)
+
+        tunnel = self._open_new_tunnel(ssh_tunnel, sqlalchemy_database_uri)
+        with _TUNNEL_POOL_LOCK:
+            _TUNNEL_POOL[cache_key] = _PooledTunnelEntry(tunnel=tunnel, ref_count=1)
+        logger.info(
+            "[SSH] Opened new pooled tunnel for database_id=%s at %s",
+            ssh_tunnel.database_id,
+            tunnel.local_bind_address,
+        )
+        return tunnel, cache_key
+
+    def _release_tunnel(self, cache_key: tuple[Any, ...]) -> None:
+        with _TUNNEL_POOL_LOCK:
+            entry = _TUNNEL_POOL.get(cache_key)
+            if entry is None:
+                return
+            entry.ref_count = max(entry.ref_count - 1, 0)
+            if entry.ref_count == 0:
+                entry.last_released_at = time.monotonic()
+            self._cleanup_idle_tunnels()
+
+    def _cleanup_idle_tunnels(self) -> None:
+        """Close tunnels that have been idle longer than ``pool_idle_sec``."""
+        if not self.pool_enabled:
+            return
+        now = time.monotonic()
+        stale_keys = [
+            key
+            for key, entry in _TUNNEL_POOL.items()
+            if entry.ref_count == 0
+            and (now - entry.last_released_at) >= self.pool_idle_sec
+        ]
+        for key in stale_keys:
+            entry = _TUNNEL_POOL.pop(key, None)
+            if entry is not None:
+                self._close_tunnel_entry(key, entry, evict=False)
+
+    @staticmethod
+    def _close_tunnel_entry(
+        cache_key: tuple[Any, ...],
+        entry: _PooledTunnelEntry,
+        *,
+        evict: bool = True,
+    ) -> None:
+        if evict:
+            _TUNNEL_POOL.pop(cache_key, None)
+        try:
+            entry.tunnel.stop(force=True)
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("Failed to close SSH tunnel: %s", ex)
+
+    def create_tunnel(
+        self,
+        ssh_tunnel: "SSHTunnel",
+        sqlalchemy_database_uri: str,
+    ) -> AbstractContextManager[sshtunnel.SSHTunnelForwarder]:
+        if self.pool_enabled:
+            return _PooledSSHTunnelContext(self, ssh_tunnel, sqlalchemy_database_uri)
+        return sshtunnel.open_tunnel(
+            **self._build_tunnel_params(ssh_tunnel, sqlalchemy_database_uri)
+        )
+
+
+def evict_tunnels_for_database(database_id: int) -> None:
+    """Close all pooled SSH tunnels for a database (e.g. after config changes)."""
+    with _TUNNEL_POOL_LOCK:
+        stale_keys = [key for key in _TUNNEL_POOL if key[0] == database_id]
+        for key in stale_keys:
+            entry = _TUNNEL_POOL.pop(key, None)
+            if entry is not None:
+                SSHManager._close_tunnel_entry(key, entry, evict=False)
+
+
+def _register_tunnel_pool_eviction_listeners() -> None:
+    import sqlalchemy as sqla
+
+    from superset.databases.ssh_tunnel.models import SSHTunnel
+    from superset.models.core import Database
+
+    @sqla.event.listens_for(Database, "after_update")
+    @sqla.event.listens_for(Database, "after_delete")
+    def _evict_on_database_change(
+        mapper: sqla.orm.Mapper,
+        connection: sqla.engine.Connection,
+        target: Database,
+    ) -> None:
+        if target.id is not None:
+            evict_tunnels_for_database(target.id)
+
+    @sqla.event.listens_for(SSHTunnel, "after_update")
+    @sqla.event.listens_for(SSHTunnel, "after_delete")
+    def _evict_on_tunnel_change(
+        mapper: sqla.orm.Mapper,
+        connection: sqla.engine.Connection,
+        target: SSHTunnel,
+    ) -> None:
+        if target.database_id is not None:
+            evict_tunnels_for_database(target.database_id)
 
 
 class SSHManagerFactory:
     def __init__(self) -> None:
         self._ssh_manager = None
+        self._eviction_listeners_registered = False
 
     def init_app(self, app: Flask) -> None:
         self._ssh_manager = load_class_from_name(
             app.config["SSH_TUNNEL_MANAGER_CLASS"]
         )(app)
+        if not self._eviction_listeners_registered:
+            _register_tunnel_pool_eviction_listeners()
+            self._eviction_listeners_registered = True
 
     @property
     def instance(self) -> SSHManager:
