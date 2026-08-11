@@ -194,14 +194,10 @@ COPY scripts/check-env.py scripts/
 # keeping for backward compatibility
 COPY --chmod=755 ./docker/entrypoints/run-server.sh /usr/bin/
 
-# Some debian libs
+# Runtime OS packages only; compile-time -dev packages live in build stages.
 RUN /app/docker/apt-install.sh \
       curl \
-      libsasl2-dev \
-      libsasl2-modules-gssapi-mit \
-      libpq-dev \
-      libecpg-dev \
-      libldap2-dev
+      libsasl2-modules-gssapi-mit
 
 # Create data directory for DuckDB examples database
 # The database file will be created at runtime when examples are loaded from Parquet files
@@ -226,11 +222,17 @@ CMD ["/app/docker/entrypoints/run-server.sh"]
 EXPOSE ${SUPERSET_PORT}
 
 ######################################################################
-# Final lean image...
+# Python lean build layer (compile deps; not shipped in the final image)
 ######################################################################
-FROM python-common AS lean
+FROM python-common AS python-lean-build
 
-# Install Python dependencies using docker/pip-install.sh
+# Build-time OS packages for compiling native Python extensions.
+RUN /app/docker/apt-install.sh \
+      libsasl2-dev \
+      libpq-dev \
+      libecpg-dev \
+      libldap2-dev
+
 COPY requirements/base.txt requirements/
 
 # Copy superset-core package needed for editable install in base.txt
@@ -238,9 +240,15 @@ COPY superset-core superset-core
 
 RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
     /app/docker/pip-install.sh --requires-build-essential -r requirements/base.txt
-# Install the superset package
 RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
     uv pip install -e .
+
+######################################################################
+# Final lean image...
+######################################################################
+FROM python-common AS lean
+
+COPY --from=python-lean-build /app/.venv /app/.venv
 RUN python -m compileall /app/superset
 
 USER superset
@@ -250,11 +258,15 @@ USER superset
 ######################################################################
 FROM python-common AS dev
 
-# Debian libs needed for dev
+# Debian libs needed for dev (including compile-time -dev packages)
 RUN /app/docker/apt-install.sh \
     git \
     pkg-config \
-    default-libmysqlclient-dev
+    default-libmysqlclient-dev \
+    libsasl2-dev \
+    libpq-dev \
+    libecpg-dev \
+    libldap2-dev
 
 # Copy development requirements and install them
 COPY requirements/*.txt requirements/
