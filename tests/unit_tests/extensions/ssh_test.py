@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import threading
 import time
 from collections.abc import Generator
 from unittest.mock import Mock, patch
@@ -45,6 +46,7 @@ from superset.commands.database.ssh_tunnel.exceptions import (
 )
 from superset.extensions.ssh import (
     _TUNNEL_POOL,
+    _TUNNEL_POOL_GENERATION,
     _TUNNEL_POOL_LOCK,
     evict_tunnels_for_database,
     SSHManager,
@@ -56,9 +58,11 @@ from superset.extensions.ssh import (
 def clear_tunnel_pool() -> Generator[None, None, None]:
     with _TUNNEL_POOL_LOCK:
         _TUNNEL_POOL.clear()
+        _TUNNEL_POOL_GENERATION.clear()
     yield
     with _TUNNEL_POOL_LOCK:
         _TUNNEL_POOL.clear()
+        _TUNNEL_POOL_GENERATION.clear()
 
 
 def _make_manager(strict: bool = False, *, pool_enabled: bool = False) -> SSHManager:
@@ -512,6 +516,104 @@ def test_pooled_tunnel_evicted_for_database() -> None:
 
         with manager.create_tunnel(ssh_tunnel, uri):
             pass
+
+    assert mock_open.call_count == 2
+
+
+def test_concurrent_acquire_does_not_leak_duplicate_tunnel() -> None:
+    """Losing the create race must stop the unused forwarder and share one entry."""
+    manager = _make_manager(pool_enabled=True)
+    ssh_tunnel = _make_ssh_tunnel(_make_ed25519_pem())
+    uri = "postgresql://user:pass@db.example.com:5432/x"
+
+    first_opened = Mock()
+    first_opened.is_active = True
+    first_opened.local_bind_address = ("127.0.0.1", 54321)
+    second_opened = Mock()
+    second_opened.is_active = True
+    second_opened.local_bind_address = ("127.0.0.1", 54322)
+
+    open_calls = 0
+    open_count_lock = threading.Lock()
+    first_open_entered = threading.Event()
+    release_first_open = threading.Event()
+
+    def open_side_effect(*_args: object, **_kwargs: object) -> Mock:
+        nonlocal open_calls
+        with open_count_lock:
+            open_calls += 1
+            call_number = open_calls
+        if call_number == 1:
+            # Hold the first open so the second acquirer also misses the pool.
+            first_open_entered.set()
+            assert release_first_open.wait(timeout=2)
+            return first_opened
+        return second_opened
+
+    results: list[Mock] = []
+    results_lock = threading.Lock()
+
+    with patch("superset.extensions.ssh.sshtunnel.open_tunnel") as mock_open:
+        mock_open.side_effect = open_side_effect
+
+        def acquire() -> None:
+            tunnel, _key = manager._acquire_tunnel(ssh_tunnel, uri)
+            with results_lock:
+                results.append(tunnel)
+
+        t1 = threading.Thread(target=acquire)
+        t2 = threading.Thread(target=acquire)
+        t1.start()
+        assert first_open_entered.wait(timeout=2)
+        t2.start()
+        for _ in range(100):
+            if open_calls >= 2:
+                break
+            time.sleep(0.01)
+        assert open_calls >= 2
+        release_first_open.set()
+        t1.join(timeout=2)
+        t2.join(timeout=2)
+
+    # Exactly one forwarder remains pooled; the race loser is force-stopped.
+    assert len(results) == 2
+    assert results[0] is results[1]
+    winner = results[0]
+    assert winner in (first_opened, second_opened)
+    loser = second_opened if winner is first_opened else first_opened
+    assert len(_TUNNEL_POOL) == 1
+    entry = next(iter(_TUNNEL_POOL.values()))
+    assert entry.tunnel is winner
+    assert entry.ref_count == 2
+    loser.stop.assert_called_once_with(force=True)
+    winner.stop.assert_not_called()
+
+
+def test_evict_defers_stop_while_tunnel_in_use() -> None:
+    """In-flight holders keep their tunnel; eviction closes it only after release."""
+    manager = _make_manager(pool_enabled=True)
+    ssh_tunnel = _make_ssh_tunnel(_make_ed25519_pem())
+    uri = "postgresql://user:pass@db.example.com:5432/x"
+
+    first = Mock()
+    first.is_active = True
+    first.local_bind_address = ("127.0.0.1", 54321)
+    second = Mock()
+    second.is_active = True
+    second.local_bind_address = ("127.0.0.1", 54322)
+
+    with patch("superset.extensions.ssh.sshtunnel.open_tunnel") as mock_open:
+        mock_open.side_effect = [first, second]
+        with manager.create_tunnel(ssh_tunnel, uri) as held:
+            assert held is first
+            evict_tunnels_for_database(1)
+            first.stop.assert_not_called()
+            # New acquires must open a replacement instead of reusing the held one.
+            with manager.create_tunnel(ssh_tunnel, uri) as replacement:
+                assert replacement is second
+            second.stop.assert_not_called()
+
+        first.stop.assert_called_once_with(force=True)
 
     assert mock_open.call_count == 2
 

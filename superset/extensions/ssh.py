@@ -55,6 +55,9 @@ logger = logging.getLogger(__name__)
 # instead of opening a new tunnel for every query.
 _TUNNEL_POOL: dict[tuple[Any, ...], "_PooledTunnelEntry"] = {}
 _TUNNEL_POOL_LOCK = threading.Lock()
+# Bumped on eviction so new acquires do not reuse entries still held by in-flight
+# requests (those entries are closed when their last holder releases).
+_TUNNEL_POOL_GENERATION: dict[int, int] = {}
 
 
 @dataclass
@@ -62,6 +65,7 @@ class _PooledTunnelEntry:
     tunnel: sshtunnel.SSHTunnelForwarder
     ref_count: int = 0
     last_released_at: float = field(default_factory=time.monotonic)
+    close_on_release: bool = False
 
 
 class _PooledSSHTunnelContext(AbstractContextManager[sshtunnel.SSHTunnelForwarder]):
@@ -265,8 +269,10 @@ class SSHManager:
         url = make_url_safe(sqlalchemy_database_uri)
         backend = url.get_backend_name()
         port = url.port or get_default_port(backend)
+        generation = _TUNNEL_POOL_GENERATION.get(ssh_tunnel.database_id, 0)
         return (
             ssh_tunnel.database_id,
+            generation,
             ssh_tunnel.server_address,
             ssh_tunnel.server_port,
             ssh_tunnel.username,
@@ -339,7 +345,11 @@ class SSHManager:
         with _TUNNEL_POOL_LOCK:
             self._cleanup_idle_tunnels()
             entry = _TUNNEL_POOL.get(cache_key)
-            if entry is not None and entry.tunnel.is_active:
+            if (
+                entry is not None
+                and entry.tunnel.is_active
+                and not entry.close_on_release
+            ):
                 entry.ref_count += 1
                 logger.debug(
                     "[SSH] Reusing pooled tunnel for database_id=%s (ref_count=%s)",
@@ -347,11 +357,37 @@ class SSHManager:
                     entry.ref_count,
                 )
                 return entry.tunnel, cache_key
-            if entry is not None:
+            if entry is not None and entry.ref_count == 0:
                 self._close_tunnel_entry(cache_key, entry)
 
         tunnel = self._open_new_tunnel(ssh_tunnel, sqlalchemy_database_uri)
         with _TUNNEL_POOL_LOCK:
+            # Another acquirer may have populated the pool while we opened outside
+            # the lock; reuse that tunnel and discard ours to avoid leaks.
+            entry = _TUNNEL_POOL.get(cache_key)
+            if (
+                entry is not None
+                and entry.tunnel.is_active
+                and not entry.close_on_release
+            ):
+                entry.ref_count += 1
+                try:
+                    tunnel.stop(force=True)
+                except Exception as ex:  # noqa: BLE001
+                    logger.warning("Failed to close duplicate SSH tunnel: %s", ex)
+                logger.debug(
+                    "[SSH] Reusing pooled tunnel for database_id=%s (ref_count=%s)",
+                    ssh_tunnel.database_id,
+                    entry.ref_count,
+                )
+                return entry.tunnel, cache_key
+            if entry is not None and entry.ref_count == 0:
+                self._close_tunnel_entry(cache_key, entry)
+            elif entry is not None:
+                # Still held (inactive or already marked for close). Keep the
+                # existing entry for its holders and pool this tunnel separately.
+                entry.close_on_release = True
+                cache_key = (*cache_key, "replacement", id(tunnel))
             _TUNNEL_POOL[cache_key] = _PooledTunnelEntry(tunnel=tunnel, ref_count=1)
         logger.info(
             "[SSH] Opened new pooled tunnel for database_id=%s at %s",
@@ -367,8 +403,11 @@ class SSHManager:
                 return
             entry.ref_count = max(entry.ref_count - 1, 0)
             if entry.ref_count == 0:
-                entry.last_released_at = time.monotonic()
-            self._cleanup_idle_tunnels()
+                if entry.close_on_release:
+                    self._close_tunnel_entry(cache_key, entry)
+                else:
+                    entry.last_released_at = time.monotonic()
+                    self._cleanup_idle_tunnels()
 
     def _cleanup_idle_tunnels(self) -> None:
         """Close tunnels that have been idle longer than ``pool_idle_sec``."""
@@ -413,13 +452,26 @@ class SSHManager:
 
 
 def evict_tunnels_for_database(database_id: int) -> None:
-    """Close all pooled SSH tunnels for a database (e.g. after config changes)."""
+    """Invalidate pooled SSH tunnels for a database (e.g. after config changes).
+
+    Idle tunnels are stopped immediately. Tunnels still held by in-flight requests
+    are marked to close on last release so active queries are not torn down.
+    """
     with _TUNNEL_POOL_LOCK:
+        _TUNNEL_POOL_GENERATION[database_id] = (
+            _TUNNEL_POOL_GENERATION.get(database_id, 0) + 1
+        )
         stale_keys = [key for key in _TUNNEL_POOL if key[0] == database_id]
         for key in stale_keys:
-            entry = _TUNNEL_POOL.pop(key, None)
-            if entry is not None:
-                SSHManager._close_tunnel_entry(key, entry, evict=False)
+            entry = _TUNNEL_POOL.get(key)
+            if entry is None:
+                continue
+            if entry.ref_count == 0:
+                entry = _TUNNEL_POOL.pop(key, None)
+                if entry is not None:
+                    SSHManager._close_tunnel_entry(key, entry, evict=False)
+            else:
+                entry.close_on_release = True
 
 
 def _register_tunnel_pool_eviction_listeners() -> None:
