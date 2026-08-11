@@ -989,6 +989,12 @@ SSH_TUNNEL_PACKET_TIMEOUT_SEC = 1.0
 #: ``server_host_key`` are still verified regardless of this flag.
 SSH_TUNNEL_STRICT_HOST_KEY_CHECKING: bool = False
 
+#: Reuse SSH tunnels across requests instead of opening a new SSH connection for
+#: every query (#41745). Disable to restore the previous per-query tunnel behavior.
+SSH_TUNNEL_POOL_ENABLED = True
+#: Close idle pooled tunnels after this many seconds (ref_count == 0).
+SSH_TUNNEL_POOL_IDLE_SEC = 300.0
+
 
 # Feature flags may also be set via 'SUPERSET_FEATURE_' prefixed environment vars.
 DEFAULT_FEATURE_FLAGS.update(
