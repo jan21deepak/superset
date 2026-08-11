@@ -115,12 +115,25 @@ class QueryResultSchema(Schema):
     extra = fields.Dict(keys=fields.String())
 
 
+class StatementResultSchema(Schema):
+    original_sql = fields.String()
+    executed_sql = fields.String()
+    data = fields.List(fields.Dict(), allow_none=True)
+    columns = fields.List(fields.Dict())
+    selected_columns = fields.List(fields.Dict())
+    expanded_columns = fields.List(fields.Dict())
+    row_count = fields.Integer()
+    execution_time_ms = fields.Float()
+
+
 class QueryExecutionResponseSchema(Schema):
     status = fields.String()
     data = fields.List(fields.Dict())
     columns = fields.List(fields.Dict())
     selected_columns = fields.List(fields.Dict())
     expanded_columns = fields.List(fields.Dict())
+    statements = fields.List(fields.Nested(StatementResultSchema))
+    total_execution_time_ms = fields.Float()
     query = fields.Nested(QueryResultSchema)
     query_id = fields.Integer()
 

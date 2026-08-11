@@ -513,6 +513,8 @@ def test_finalize_successful_query(
         payload["statements"][0]["executed_sql"]
         == "SELECT * FROM users WHERE rls_filter"
     )
+    assert payload["data"] == [{"id": 1}]
+    assert payload["columns"] == mock_result_set.columns
 
 
 def test_finalize_successful_query_statement_count_mismatch(

@@ -351,6 +351,104 @@ def _serialize_payload(
     return json.dumps(payload, default=json.json_iso_dttm_ser, ignore_nan=True)
 
 
+def _is_data_bearing_result_set(result_set: SupersetResultSet) -> bool:
+    """Return whether a result set contains tabular data to display."""
+    return bool(result_set.columns)
+
+
+def _build_statements_payload(
+    original_sqls: list[str],
+    execution_results: list[tuple[str, SupersetResultSet]],
+    db_engine_spec: BaseEngineSpec,
+    use_msgpack: bool,
+    expand_data: bool,
+) -> tuple[
+    list[dict[str, Any]],
+    Union[bytes, str, list[Any]],
+    list[Any],
+    list[Any],
+    list[Any],
+    SupersetResultSet,
+    int,
+]:
+    """
+    Build per-statement results and top-level payload fields.
+
+    Top-level ``data``/``columns`` mirror the last data-bearing statement so
+    existing SQL Lab consumers keep working.
+    """
+    if len(original_sqls) != len(execution_results):
+        original_sqls = [executed_sql for executed_sql, _ in execution_results]
+
+    statements_data: list[dict[str, Any]] = []
+    data: Union[bytes, str, list[Any], None] = None
+    selected_columns: list[Any] = []
+    all_columns: list[Any] = []
+    expanded_columns: list[Any] = []
+    last_result_set = execution_results[-1][1]
+    total_rows = 0
+
+    for orig_sql, (executed_sql, result_set) in zip(
+        original_sqls, execution_results, strict=True
+    ):
+        total_rows += result_set.size
+        is_data_bearing = _is_data_bearing_result_set(result_set)
+        stmt_data: Union[bytes, str, list[Any], None] = None
+        stmt_selected_columns: list[Any] = []
+        stmt_all_columns: list[Any] = []
+        stmt_expanded_columns: list[Any] = []
+
+        if is_data_bearing:
+            (
+                stmt_data,
+                stmt_selected_columns,
+                stmt_all_columns,
+                stmt_expanded_columns,
+            ) = _serialize_and_expand_data(
+                result_set,
+                db_engine_spec,
+                use_msgpack,
+                expand_data,
+            )
+            data = stmt_data
+            selected_columns = stmt_selected_columns
+            all_columns = stmt_all_columns
+            expanded_columns = stmt_expanded_columns
+            last_result_set = result_set
+
+        statements_data.append(
+            {
+                "original_sql": orig_sql,
+                "executed_sql": executed_sql,
+                "data": stmt_data,
+                "columns": stmt_all_columns,
+                "selected_columns": stmt_selected_columns,
+                "expanded_columns": stmt_expanded_columns,
+                "row_count": result_set.size,
+            }
+        )
+
+    if data is None:
+        data, selected_columns, all_columns, expanded_columns = (
+            _serialize_and_expand_data(
+                last_result_set,
+                db_engine_spec,
+                use_msgpack,
+                expand_data,
+            )
+        )
+
+    return (
+        statements_data,
+        data,
+        selected_columns,
+        all_columns,
+        expanded_columns,
+        last_result_set,
+        total_rows,
+    )
+
+
 def _serialize_and_expand_data(
     result_set: SupersetResultSet,
     db_engine_spec: BaseEngineSpec,
@@ -486,6 +584,8 @@ def execute_sql_statements(  # noqa: C901
     for statement in parsed_script.statements:
         apply_limit(query, statement)
 
+    original_sqls = [stmt.format() for stmt in parsed_script.statements]
+
     # Build the execution blocks, applying `SQL_QUERY_MUTATOR` per
     # `MUTATE_AFTER_SPLIT` (shared with the async path in `celery_task` so the
     # `run_multiple_statements_as_one` × `MUTATE_AFTER_SPLIT` matrix behaves
@@ -509,6 +609,7 @@ def execute_sql_statements(  # noqa: C901
             db.session.commit()
 
         block_count = len(blocks)
+        execution_results: list[tuple[str, SupersetResultSet]] = []
         for i, block in enumerate(blocks):
             # Check if stopped
             db.session.refresh(query)
@@ -538,6 +639,7 @@ def execute_sql_statements(  # noqa: C901
 
             try:
                 result_set = execute_query(query, cursor, log_params)
+                execution_results.append((query.executed_sql, result_set))
             except SqlLabQueryStoppedException:
                 payload.update({"status": QueryStatus.STOPPED})
                 return payload
@@ -559,11 +661,28 @@ def execute_sql_statements(  # noqa: C901
         if parsed_script.has_mutation() or query.select_as_cta:
             conn.commit()
 
+    use_arrow_data = store_results and cast(bool, results_backend_use_msgpack)
+    (
+        statements_data,
+        data,
+        selected_columns,
+        all_columns,
+        expanded_columns,
+        last_result_set,
+        total_rows,
+    ) = _build_statements_payload(
+        original_sqls,
+        execution_results,
+        db_engine_spec,
+        use_arrow_data,
+        expand_data,
+    )
+
     # Success, updating the query entry in database
-    query.rows = result_set.size
+    query.rows = total_rows
     query.progress = 100
     query.set_extra_json_key("progress", None)
-    query.set_extra_json_key("columns", result_set.columns)
+    query.set_extra_json_key("columns", last_result_set.columns)
     if query.select_as_cta:
         query.select_sql = database.select_star(
             Table(query.tmp_table_name, query.tmp_schema_name),
@@ -573,11 +692,6 @@ def execute_sql_statements(  # noqa: C901
         )
     query.end_time = now_as_float()
 
-    use_arrow_data = store_results and cast(bool, results_backend_use_msgpack)
-    data, selected_columns, all_columns, expanded_columns = _serialize_and_expand_data(
-        result_set, db_engine_spec, use_arrow_data, expand_data
-    )
-
     # TODO: data should be saved separately from metadata (likely in Parquet)
     payload.update(
         {
@@ -586,6 +700,7 @@ def execute_sql_statements(  # noqa: C901
             "columns": all_columns,
             "selected_columns": selected_columns,
             "expanded_columns": expanded_columns,
+            "statements": statements_data,
             "query": query.to_dict(),
         }
     )
@@ -680,12 +795,19 @@ def execute_sql_statements(  # noqa: C901
         # since we're returning results we need to create non-arrow data
         if use_arrow_data:
             (
+                statements_data,
                 data,
                 selected_columns,
                 all_columns,
                 expanded_columns,
-            ) = _serialize_and_expand_data(
-                result_set, db_engine_spec, False, expand_data
+                _,
+                _,
+            ) = _build_statements_payload(
+                original_sqls,
+                execution_results,
+                db_engine_spec,
+                False,
+                expand_data,
             )
             payload.update(
                 {
@@ -693,6 +815,7 @@ def execute_sql_statements(  # noqa: C901
                     "columns": all_columns,
                     "selected_columns": selected_columns,
                     "expanded_columns": expanded_columns,
+                    "statements": statements_data,
                 }
             )
         # Check the size of the serialized payload (opt-in logic for return_results)

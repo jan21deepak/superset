@@ -67,7 +67,12 @@ def apply_display_max_row_configuration_if_require(  # pylint: disable=invalid-n
         )
 
     if is_require_to_apply():
-        sql_results["data"] = sql_results["data"][:max_rows_in_result]
+        if statements := sql_results.get("statements"):
+            for statement in statements:
+                if statement.get("data"):
+                    statement["data"] = statement["data"][:max_rows_in_result]
+        elif "data" in sql_results:
+            sql_results["data"] = sql_results["data"][:max_rows_in_result]
         sql_results["displayLimitReached"] = True
     return sql_results
 

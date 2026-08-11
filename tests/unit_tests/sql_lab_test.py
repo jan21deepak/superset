@@ -576,3 +576,46 @@ def test_get_predicates_for_table_excludes_self(mocker: MockerFixture) -> None:
     filter_call = db.session.query().filter.call_args
     and_clause = filter_call.args[0]
     assert len(and_clause.clauses) == 5
+
+
+def test_build_statements_payload_preserves_all_data_bearing_statements(
+    mocker: MockerFixture,
+) -> None:
+    """Multi-statement SQL Lab payloads should include every result set."""
+    from superset.sql_lab import _build_statements_payload
+
+    first_result = mocker.MagicMock()
+    first_result.size = 1
+    first_result.columns = [{"column_name": "first_col"}]
+    second_result = mocker.MagicMock()
+    second_result.size = 2
+    second_result.columns = [{"column_name": "second_col"}]
+
+    mocker.patch(
+        "superset.sql_lab._serialize_and_expand_data",
+        side_effect=[
+            ([{"first_col": 1}], [], [{"column_name": "first_col"}], []),
+            ([{"second_col": 2}], [], [{"column_name": "second_col"}], []),
+        ],
+    )
+
+    statements_data, data, _, all_columns, _, last_result_set, total_rows = (
+        _build_statements_payload(
+            original_sqls=["SELECT 1", "SELECT 2"],
+            execution_results=[
+                ("SELECT 1", first_result),
+                ("SELECT 2", second_result),
+            ],
+            db_engine_spec=mocker.MagicMock(),
+            use_msgpack=False,
+            expand_data=False,
+        )
+    )
+
+    assert total_rows == 3
+    assert len(statements_data) == 2
+    assert statements_data[0]["data"] == [{"first_col": 1}]
+    assert statements_data[1]["data"] == [{"second_col": 2}]
+    assert data == [{"second_col": 2}]
+    assert all_columns == [{"column_name": "second_col"}]
+    assert last_result_set is second_result
