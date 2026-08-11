@@ -714,6 +714,66 @@ def check_datasource_perms(
     viz_obj.raise_for_access()
 
 
+def _deserialize_arrow_result_data(data: bytes) -> list[dict[str, Any]]:
+    reader = pa.BufferReader(data)
+    pa_table = pa.ipc.open_stream(reader).read_all()
+    df = result_set.SupersetResultSet.convert_table_to_df(pa_table)
+    return dataframe.df_to_records(df) or []
+
+
+def _deserialize_statements_payload(
+    ds_payload: dict[str, Any], db_engine_spec: Any
+) -> dict[str, Any]:
+    """Deserialize multi-statement msgpack payloads from the results backend."""
+    last_data: list[dict[str, Any]] | None = None
+    last_columns: list[Any] | None = None
+    last_selected_columns: list[Any] | None = None
+    last_expanded_columns: list[Any] | None = None
+
+    for statement in ds_payload.get("statements", []):
+        stmt_data = statement.get("data")
+        if isinstance(stmt_data, bytes):
+            try:
+                statement["data"] = _deserialize_arrow_result_data(stmt_data)
+            except pa.ArrowSerializationError as ex:
+                raise SerializationError("Unable to deserialize table") from ex
+
+        if statement.get("data"):
+            selected_columns = statement.get(
+                "selected_columns", statement.get("columns", [])
+            )
+            for column in selected_columns:
+                if "name" in column:
+                    column["column_name"] = column.get("name")
+            all_columns, data, expanded_columns = db_engine_spec.expand_data(
+                selected_columns, statement["data"]
+            )
+            statement.update(
+                {
+                    "data": data,
+                    "columns": all_columns,
+                    "selected_columns": selected_columns,
+                    "expanded_columns": expanded_columns,
+                }
+            )
+            last_data = data
+            last_columns = all_columns
+            last_selected_columns = selected_columns
+            last_expanded_columns = expanded_columns
+
+    if last_data is not None:
+        ds_payload.update(
+            {
+                "data": last_data,
+                "columns": last_columns,
+                "selected_columns": last_selected_columns,
+                "expanded_columns": last_expanded_columns,
+            }
+        )
+
+    return ds_payload
+
+
 def _deserialize_results_payload(
     payload: Union[bytes, str], query: Query, use_msgpack: Optional[bool] = False
 ) -> dict[str, Any]:
@@ -723,6 +783,14 @@ def _deserialize_results_payload(
             "sqllab.query.results_backend_msgpack_deserialize", stats_logger
         ):
             ds_payload = msgpack.loads(payload, raw=False)
+
+        db_engine_spec = query.database.db_engine_spec
+
+        if ds_payload.get("statements"):
+            with stats_timing(
+                "sqllab.query.results_backend_pa_deserialize", stats_logger
+            ):
+                return _deserialize_statements_payload(ds_payload, db_engine_spec)
 
         with stats_timing("sqllab.query.results_backend_pa_deserialize", stats_logger):
             try:
@@ -738,7 +806,6 @@ def _deserialize_results_payload(
             if "name" in column:
                 column["column_name"] = column.get("name")
 
-        db_engine_spec = query.database.db_engine_spec
         all_columns, data, expanded_columns = db_engine_spec.expand_data(
             ds_payload["selected_columns"], ds_payload["data"]
         )

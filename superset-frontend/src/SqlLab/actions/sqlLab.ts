@@ -103,6 +103,20 @@ export interface SqlExecuteQueryResult {
 }
 
 /**
+ * Per-statement result from multi-statement SQL Lab execution.
+ */
+export interface SqlStatementResult {
+  original_sql: string;
+  executed_sql: string;
+  data: Record<string, unknown>[] | null;
+  columns: QueryColumn[];
+  selected_columns?: QueryColumn[];
+  expanded_columns?: QueryColumn[];
+  row_count: number;
+  execution_time_ms?: number;
+}
+
+/**
  * Response from /api/v1/sqllab/execute/
  * This matches QueryExecutionResponseSchema from the backend
  */
@@ -112,6 +126,8 @@ export interface SqlExecuteResponse {
   columns: QueryColumn[];
   selected_columns?: QueryColumn[];
   expanded_columns?: QueryColumn[];
+  statements?: SqlStatementResult[];
+  total_execution_time_ms?: number;
   query: SqlExecuteQueryResult;
   query_id?: number;
 }

@@ -38,6 +38,7 @@ import {
   Tooltip,
   Input,
   Label,
+  Tabs,
 } from '@superset-ui/core/components';
 import {
   CopyToClipboard,
@@ -75,6 +76,7 @@ import {
   fetchQueryResults,
   reFetchQueryResults,
   reRunQuery,
+  SqlStatementResult,
 } from 'src/SqlLab/actions/sqlLab';
 import { URL_PARAMS } from 'src/constants';
 import useLogAction from 'src/logger/useLogAction';
@@ -220,13 +222,49 @@ const ResultSet = ({
   const [cachedData, setCachedData] = useState<Record<string, unknown>[]>([]);
   const [showSaveDatasetModal, setShowSaveDatasetModal] = useState(false);
   const [showStreamingModal, setShowStreamingModal] = useState(false);
+  const [activeStatementIndex, setActiveStatementIndex] = useState(0);
+
+  const dataBearingStatements = useMemo(
+    () =>
+      query.results?.statements?.filter(
+        (statement: SqlStatementResult) =>
+          statement.data && statement.columns?.length,
+      ) ?? [],
+    [query.results?.statements],
+  );
+
+  const displayedResults = useMemo(() => {
+    if (dataBearingStatements.length > 1) {
+      const statement =
+        dataBearingStatements[activeStatementIndex] ?? dataBearingStatements[0];
+      return {
+        data: statement.data ?? [],
+        columns: statement.columns ?? [],
+        expanded_columns: statement.expanded_columns ?? [],
+      };
+    }
+
+    return {
+      data: query.results?.data ?? [],
+      columns: query.results?.columns ?? [],
+      expanded_columns: query.results?.expanded_columns ?? [],
+    };
+  }, [
+    activeStatementIndex,
+    dataBearingStatements,
+    query.results?.columns,
+    query.results?.data,
+    query.results?.expanded_columns,
+  ]);
+
   const orderedColumnKeys = useMemo(
-    () => query.results?.columns?.map(col => col.column_name) ?? EMPTY,
-    [query.results?.columns],
+    () => displayedResults.columns?.map(col => col.column_name) ?? EMPTY,
+    [displayedResults.columns],
   );
   const expandedColumns = useMemo(
-    () => query.results?.expanded_columns?.map(col => col.column_name) ?? EMPTY,
-    [query.results?.expanded_columns],
+    () =>
+      displayedResults.expanded_columns?.map(col => col.column_name) ?? EMPTY,
+    [displayedResults.expanded_columns],
   );
 
   const {
@@ -259,6 +297,10 @@ const ResultSet = ({
     // only do this the first time the component is rendered/mounted
     reRunQueryIfSessionTimeoutErrorOnMount();
   }, [reRunQueryIfSessionTimeoutErrorOnMount]);
+
+  useEffect(() => {
+    setActiveStatementIndex(0);
+  }, [query.id, query.results?.statements]);
 
   const fetchResults = (q: typeof query, timeout?: number) => {
     dispatch(fetchQueryResults(q, displayLimit, timeout));
@@ -713,8 +755,8 @@ const ResultSet = ({
     let data;
     if (cache && query.cached) {
       data = cachedData;
-    } else if (results?.data) {
-      ({ data } = results);
+    } else if (displayedResults?.data) {
+      ({ data } = displayedResults);
     }
     if (data && data.length > 0) {
       const allowHTML = getItem(
@@ -732,9 +774,25 @@ const ResultSet = ({
         themeOverrides: resultsGridThemeOverrides,
       };
 
+      const statementTabs =
+        dataBearingStatements.length > 1
+          ? dataBearingStatements.map((statement, index) => ({
+              key: String(index),
+              label: t('Statement %(num)s', { num: index + 1 }),
+              children: null,
+            }))
+          : [];
+
       return (
         <>
           <ResultContainer>
+            {statementTabs.length > 0 && (
+              <Tabs
+                activeKey={String(activeStatementIndex)}
+                onChange={key => setActiveStatementIndex(Number(key))}
+                items={statementTabs}
+              />
+            )}
             <div
               css={css`
                 display: flex;
@@ -813,6 +871,17 @@ const ResultSet = ({
     if (data && data.length === 0) {
       return (
         <>
+          {dataBearingStatements.length > 1 && (
+            <Tabs
+              activeKey={String(activeStatementIndex)}
+              onChange={key => setActiveStatementIndex(Number(key))}
+              items={dataBearingStatements.map((statement, index) => ({
+                key: String(index),
+                label: t('Statement %(num)s', { num: index + 1 }),
+                children: null,
+              }))}
+            />
+          )}
           <Alert type="warning" message={t('The query returned no data')} />
           <StreamingExportModal
             visible={showStreamingModal}

@@ -200,19 +200,29 @@ def _finalize_successful_query(
     query.rows = total_rows
     query.progress = 100
     query.set_extra_json_key("progress", None)
-    # Store columns from last statement (for compatibility)
-    if execution_results and execution_results[-1][1] is not None:
+    # Store columns from last data-bearing statement (for compatibility)
+    last_data_bearing: SupersetResultSet | None = None
+    for _, result_set, _, _ in reversed(execution_results):
+        if result_set is not None and result_set.columns:
+            last_data_bearing = result_set
+            break
+    if last_data_bearing is not None:
+        query.set_extra_json_key("columns", last_data_bearing.columns)
+    elif execution_results and execution_results[-1][1] is not None:
         query.set_extra_json_key("columns", execution_results[-1][1].columns)
     query.end_time = now_as_float()
 
-    payload.update(
-        {
-            "status": QueryStatus.SUCCESS.value,
-            "statements": statements_data,
-            "total_execution_time_ms": total_execution_time_ms,
-            "query": query.to_dict(),
-        }
-    )
+    payload_update: dict[str, Any] = {
+        "status": QueryStatus.SUCCESS.value,
+        "statements": statements_data,
+        "total_execution_time_ms": total_execution_time_ms,
+        "query": query.to_dict(),
+    }
+    if last_data_bearing is not None:
+        data, columns = _serialize_result_set(last_data_bearing)
+        payload_update.update({"data": data, "columns": columns})
+
+    payload.update(payload_update)
     payload["query"]["state"] = QueryStatus.SUCCESS.value
 
 
