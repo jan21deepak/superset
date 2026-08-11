@@ -228,19 +228,23 @@ const ResultSet = ({
     () =>
       query.results?.statements?.filter(
         (statement: SqlStatementResult) =>
-          statement.data && statement.columns?.length,
+          Array.isArray(statement.data) && statement.columns?.length,
       ) ?? [],
     [query.results?.statements],
   );
 
+  const activeStatement =
+    dataBearingStatements[activeStatementIndex] ?? dataBearingStatements[0];
+
   const displayedResults = useMemo(() => {
-    if (dataBearingStatements.length > 1) {
-      const statement =
-        dataBearingStatements[activeStatementIndex] ?? dataBearingStatements[0];
+    // Prefer per-statement payloads whenever available so top-level
+    // last-statement mirrors (including empty trailing SELECTs) cannot hide
+    // earlier result sets.
+    if (activeStatement) {
       return {
-        data: statement.data ?? [],
-        columns: statement.columns ?? [],
-        expanded_columns: statement.expanded_columns ?? [],
+        data: activeStatement.data ?? [],
+        columns: activeStatement.columns ?? [],
+        expanded_columns: activeStatement.expanded_columns ?? [],
       };
     }
 
@@ -250,12 +254,13 @@ const ResultSet = ({
       expanded_columns: query.results?.expanded_columns ?? [],
     };
   }, [
-    activeStatementIndex,
-    dataBearingStatements,
+    activeStatement,
     query.results?.columns,
     query.results?.data,
     query.results?.expanded_columns,
   ]);
+
+  const displayedRowCount = activeStatement?.row_count ?? query.rows ?? 0;
 
   const orderedColumnKeys = useMemo(
     () => displayedResults.columns?.map(col => col.column_name) ?? EMPTY,
@@ -342,7 +347,7 @@ const ResultSet = ({
         ...EXPLORE_CHART_DEFAULT,
         datasource: `${results.query_id}__query`,
 
-        all_columns: results.columns.map(column => column.column_name),
+        all_columns: displayedResults.columns.map(column => column.column_name),
       });
       const force = false;
       const includeAppRoot = openInNewWindow;
@@ -395,15 +400,18 @@ const ResultSet = ({
     if (search || visualize || csv) {
       const { limitingFactor, queryLimit, results, rows } = query;
       const limit = queryLimit || results.query.limit;
-      const rowsCount = Math.min(rows || 0, results?.data?.length || 0);
-      let { data } = query.results;
+      const rowsCount = Math.min(
+        displayedRowCount || 0,
+        displayedResults.data?.length || 0,
+      );
+      let { data } = displayedResults;
       if (cache && query.cached) {
         data = cachedData;
       }
-      const { columns } = query.results;
+      const { columns } = displayedResults;
 
       const datasource: ISaveableDatasource = {
-        columns: query.results.columns as ISimpleColumn[],
+        columns: displayedResults.columns as ISimpleColumn[],
         name: query?.tab || 'Untitled',
         dbId: query?.dbId,
         sql: query?.sql,
@@ -543,7 +551,10 @@ const ResultSet = ({
   };
 
   const renderRowsReturned = () => {
-    const { results, rows, queryLimit, limitingFactor } = query;
+    const { results, queryLimit, limitingFactor } = query;
+    // Prefer the active statement's count so multi-statement tabs match the
+    // visible grid instead of the summed query.rows total.
+    const rows = displayedRowCount;
     let limitMessage = '';
     const limitReached = results?.displayLimitReached;
     const limit = queryLimit || results.query.limit;
@@ -751,7 +762,6 @@ const ResultSet = ({
   }
 
   if (query.state === QueryState.Success && query.results) {
-    const { results } = query;
     let data;
     if (cache && query.cached) {
       data = cachedData;

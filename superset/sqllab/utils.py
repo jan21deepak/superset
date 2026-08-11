@@ -71,7 +71,9 @@ def apply_display_max_row_configuration_if_require(  # pylint: disable=invalid-n
             for statement in statements:
                 if statement.get("data"):
                     statement["data"] = statement["data"][:max_rows_in_result]
-        elif "data" in sql_results:
+        # Always truncate top-level data too: SQL Lab falls back to it whenever
+        # a single result tab is shown (including the common single-SELECT case).
+        if "data" in sql_results:
             sql_results["data"] = sql_results["data"][:max_rows_in_result]
         sql_results["displayLimitReached"] = True
     return sql_results
