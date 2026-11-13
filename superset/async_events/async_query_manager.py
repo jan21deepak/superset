@@ -258,6 +258,12 @@ class AsyncQueryManager:
             return None
 
     def _decode_token(self, token: str) -> dict[str, Any]:
+        """
+        Decode and verify an async JWT, returning its claims.
+
+        Propagates whatever ``jwt.decode`` raises for a token that is malformed,
+        expired, or signed with a different secret.
+        """
         return jwt.decode(token, self._jwt_secret, algorithms=["HS256"])
 
     def get_guest_user_channel_id(self, guest_user: GuestUser) -> str:
