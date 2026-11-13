@@ -33,7 +33,10 @@ editor actually renders. An extension that used `getEditor(language) ===
 undefined` as a "no custom editor is registered" check should use the new
 `editors.getOverrideEditor(language)` instead. `editors.getDefaultEditor(language)`
 returns the built-in provider, so an extension can wrap it rather than only
-replacing it, and `getAllEditors()` includes built-in providers.
+replacing it, and `getAllEditors()` includes built-in providers. For the same
+reason `editors.hasEditor(language)` now answers whether *any* editor renders,
+so it returns `true` for every supported language; use
+`getOverrideEditor(language)` to detect an extension-provided editor.
 
 ### Principal listing APIs now honour related-field filters
 
